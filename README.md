@@ -2,10 +2,10 @@
 
 ## Участники проекта
 
-- Киселев Сергей — ML-engineer
-- Хорошилов Федор — Teamlead , Devops
-- Бревнов Никита — Backend-developer
-- Мезенцев Антон - Frontend-developer
+- Киселев Сергей 5130904/40105 — ML-engineer
+- Хорошилов Федор 5130904/40105 — Teamlead , Devops
+- Бревнов Никита 5130904/40105 — Backend-developer
+- Мезенцев Антон 5130904/40105 - Frontend-developer
 
 ## Проблема
 
