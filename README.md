@@ -3,7 +3,7 @@
 ## Участники проекта
 
 - Киселев Сергей — ML-engineer
-- Хорошилов Федор — Teamlead,Devops
+- Хорошилов Федор — Teamlead , Devops
 - Бревнов Никита — Backend-developer
 - Мезенцев Антон - Frontend-developer
 
