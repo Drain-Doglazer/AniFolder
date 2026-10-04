@@ -1,0 +1,18 @@
+CLAUDE.md
+course.md
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Node
+node_modules/
+frontend/dist/
+
+# ML-артефакты (веса моделей)
+ml/artifacts/
+
+# Секреты
+.env
