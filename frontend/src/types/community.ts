@@ -21,7 +21,6 @@ export interface Comment {
   created_at: string;
 }
 
-// Формат ответа для курсорной пагинации
 export interface CursorPaginatedResponse<T> {
   items: T[];
   next_cursor: string | null;
@@ -30,10 +29,10 @@ export interface CursorPaginatedResponse<T> {
 export interface CreateTopicRequest {
   title: string;
   body: string;
-  anime_id?: number; // Опционально, если тема привязана к тайтлу
+  anime_id?: number;
 }
 
 export interface CreateCommentRequest {
   body: string;
-  parent_id?: number; // Для ответов на комментарии
+  parent_id?: number;
 }
