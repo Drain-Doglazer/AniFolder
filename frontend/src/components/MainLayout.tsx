@@ -12,43 +12,67 @@ export const MainLayout = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
-      <header className="bg-blue-600 text-white p-4 shadow-md">
-        <div className="container mx-auto flex justify-between items-center">
-          <Link to="/" className="text-xl font-bold">AniFolder</Link>
-          <nav className="flex items-center gap-4">
-            <Link to="/catalog" className="hover:text-blue-200">Каталог</Link>
-            <Link to="/community" className="hover:text-blue-200">Сообщество</Link>
+      <header className="bg-blue-600 text-white shadow-md">
+        <div className="container mx-auto px-6 py-4 flex justify-between items-center">
+          <Link to="/" className="text-2xl font-bold tracking-wide">
+            AniFolder
+          </Link>
+          
+          <nav className="flex items-center gap-6">
+            <Link 
+              to="/catalog" 
+              className="text-white hover:text-blue-200 transition-colors font-medium"
+            >
+              Каталог
+            </Link>
+            <Link 
+              to="/community" 
+              className="text-white hover:text-blue-200 transition-colors font-medium"
+            >
+              Сообщество
+            </Link>
 
             {isAuthenticated ? (
               <>
-                <Link to="/me" className="hover:text-blue-200">
+                <Link 
+                  to="/me" 
+                  className="text-white hover:text-blue-200 transition-colors font-medium"
+                >
                   Привет, {user?.username}
                 </Link>
                 <button
                   onClick={handleLogout}
-                  className="bg-blue-800 hover:bg-blue-900 px-3 py-1 rounded text-sm"
+                  className="bg-blue-800 hover:bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
                 >
                   Выйти
                 </button>
               </>
             ) : (
-              <div className="flex gap-3">
-                <Link to="/login" className="hover:text-blue-200">Войти</Link>
-                <Link to="/register" className="bg-blue-800 hover:bg-blue-900 px-3 py-1 rounded text-sm">
+              <>
+                <Link 
+                  to="/login" 
+                  className="text-white hover:text-blue-200 transition-colors font-medium"
+                >
+                  Войти
+                </Link>
+                <Link 
+                  to="/register" 
+                  className="bg-blue-800 hover:bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                >
                   Регистрация
                 </Link>
-              </div>
+              </>
             )}
           </nav>
         </div>
       </header>
 
-      <main className="flex-grow container mx-auto p-4">
+      <main className="flex-grow container mx-auto p-6">
         <Outlet />
       </main>
 
       <footer className="bg-gray-800 text-gray-400 p-4 text-center text-sm">
-        © 2026 AniFolder. Frontend by Anton.
+        © 2026 AniFolder
       </footer>
     </div>
   );

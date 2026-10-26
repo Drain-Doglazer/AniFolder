@@ -2,16 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Базовые глобальные стили */
 body {
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  background-color: #f9fafb; /* Аналог bg-gray-50 */
-  color: #1f2937; /* Аналог text-gray-800 */
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: #f9fafb;
+  color: #1f2937;
   margin: 0;
   padding: 0;
 }
 
-/* Плавная прокрутка для всего приложения */
 html {
   scroll-behavior: smooth;
 }
