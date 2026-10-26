@@ -34,39 +34,48 @@ export const RegisterPage = () => {
   };
 
   return (
-    <div className="max-w-md mx-auto mt-10 p-6 bg-white rounded-lg shadow-md">
-      <h2 className="text-2xl font-bold mb-6 text-center text-gray-800">Регистрация в AniFolder</h2>
+    <div className="max-w-md mx-auto mt-10 p-6 rounded-lg shadow-lg" style={{ backgroundColor: '#2a2a32' }}>
+      <h2 className="text-2xl font-bold mb-6 text-center" style={{ color: '#f0ece2' }}>
+        Регистрация в <span style={{ color: '#d4845a' }}>AniFolder</span>
+      </h2>
 
-      {error && <div className="mb-4 p-3 bg-red-100 text-red-700 rounded text-sm">{error}</div>}
+      {error && (
+        <div className="mb-4 p-3 rounded text-sm" style={{ backgroundColor: '#ef444420', color: '#ef4444', border: '1px solid #ef444440' }}>
+          {error}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Имя пользователя</label>
+          <label className="block text-sm font-medium mb-1" style={{ color: '#d1d5db' }}>Имя пользователя</label>
           <input
             type="text"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+            className="w-full p-2 border rounded focus:ring-2 outline-none"
+            style={{ backgroundColor: '#1e1e24', color: '#f0ece2', borderColor: '#374151' }}
             required
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+          <label className="block text-sm font-medium mb-1" style={{ color: '#d1d5db' }}>Email</label>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+            className="w-full p-2 border rounded focus:ring-2 outline-none"
+            style={{ backgroundColor: '#1e1e24', color: '#f0ece2', borderColor: '#374151' }}
             required
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Пароль</label>
+          <label className="block text-sm font-medium mb-1" style={{ color: '#d1d5db' }}>Пароль</label>
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+            className="w-full p-2 border rounded focus:ring-2 outline-none"
+            style={{ backgroundColor: '#1e1e24', color: '#f0ece2', borderColor: '#374151' }}
             required
             minLength={6}
           />
@@ -75,15 +84,16 @@ export const RegisterPage = () => {
         <button
           type="submit"
           disabled={mutation.isPending}
-          className="w-full py-2 px-4 bg-green-600 text-white font-medium rounded hover:bg-green-700 disabled:opacity-50 transition-colors"
+          className="w-full py-2 px-4 font-medium rounded hover:opacity-90 disabled:opacity-50 transition-colors"
+          style={{ backgroundColor: '#d4845a', color: '#f0ece2' }}
         >
           {mutation.isPending ? 'Регистрация...' : 'Зарегистрироваться'}
         </button>
       </form>
 
-      <p className="mt-4 text-center text-sm text-gray-600">
+      <p className="mt-4 text-center text-sm" style={{ color: '#9ca3af' }}>
         Уже есть аккаунт?{' '}
-        <Link to="/login" className="text-blue-600 hover:underline">
+        <Link to="/login" className="hover:underline" style={{ color: '#d4845a' }}>
           Войти
         </Link>
       </p>
