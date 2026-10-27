@@ -100,8 +100,14 @@ class RateLimiter:
         self._last = time.monotonic()
 
 
+def retry_delay(attempt: int) -> float:
+    """Пауза перед повтором: 5, 10, 20, 40… секунд, не больше 5 минут.
+    10 попыток переживают обрыв сети примерно на 20 минут."""
+    return min(5.0 * 2 ** (attempt - 1), 300.0)
+
+
 class AniListClient:
-    def __init__(self, per_minute: int = 28, max_retries: int = 5):
+    def __init__(self, per_minute: int = 28, max_retries: int = 10):
         self.limiter = RateLimiter(per_minute)
         self.max_retries = max_retries
         self.http = httpx.Client(
@@ -116,7 +122,7 @@ class AniListClient:
                 resp = self.http.post(API_URL, json={"query": query, "variables": variables})
             except httpx.TransportError as exc:
                 log.warning("сетевая ошибка (%s), попытка %d", exc, attempt)
-                time.sleep(5 * attempt)
+                time.sleep(retry_delay(attempt))
                 continue
 
             if resp.status_code == 429:
@@ -126,7 +132,7 @@ class AniListClient:
                 continue
             if resp.status_code >= 500:
                 log.warning("ошибка сервера %d, попытка %d", resp.status_code, attempt)
-                time.sleep(5 * attempt)
+                time.sleep(retry_delay(attempt))
                 continue
 
             body = resp.json()
