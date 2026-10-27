@@ -31,12 +31,14 @@ API_URL = "https://graphql.anilist.co"
 USER_AGENT = "AniFolder-ML/0.1 (course project recommender)"
 DEFAULT_OUT = Path(__file__).resolve().parents[2] / "data" / "anilist"
 
+# Листаем по времени, а не по номеру страницы: AniList не отдаёт страницы глубже
+# 5000 записей («Page depth exceeds maximum allowed»), поэтому всегда берём
+# первую страницу активностей, созданных раньше самой старой из уже увиденных.
 ACTIVITIES_QUERY = """
-query ($page: Int) {
-  Page(page: $page, perPage: 50) {
-    pageInfo { hasNextPage }
-    activities(type: ANIME_LIST, sort: ID_DESC) {
-      ... on ListActivity { userId }
+query ($before: Int) {
+  Page(page: 1, perPage: 50) {
+    activities(type: ANIME_LIST, sort: ID_DESC, createdAt_lesser: $before) {
+      ... on ListActivity { userId createdAt }
     }
   }
 }
@@ -135,10 +137,16 @@ class AniListClient:
             return body["data"]
         raise RuntimeError(f"AniList не ответил после {self.max_retries} попыток")
 
-    def activity_user_ids(self, page: int) -> tuple[list[int], bool]:
-        data = self.query(ACTIVITIES_QUERY, {"page": page})["Page"]
-        ids = [a["userId"] for a in data["activities"] if a and a.get("userId")]
-        return ids, data["pageInfo"]["hasNextPage"]
+    def activity_user_ids(self, before: int | None) -> tuple[list[int], int | None]:
+        """Возвращает id пользователей и время самой старой активности на странице
+        (курсор для следующего запроса; None, если лента закончилась)."""
+        # null в фильтре AniList не принимает, поэтому для первого запроса берём «сейчас»
+        before = before or int(time.time()) + 60
+        data = self.query(ACTIVITIES_QUERY, {"before": before})["Page"]
+        activities = [a for a in data["activities"] if a and a.get("userId")]
+        ids = [a["userId"] for a in activities]
+        cursor = min((a["createdAt"] for a in activities), default=None)
+        return ids, cursor
 
     def user_entries(self, user_id: int) -> list[dict]:
         data = self.query(LIST_QUERY, {"userId": user_id})
@@ -149,7 +157,7 @@ class AniListClient:
 class CrawlState:
     """Прогресс краулера; сохраняется после каждой записанной части."""
 
-    activity_page: int = 1
+    activity_before: int | None = None
     pending: list[int] = field(default_factory=list)
     done: list[int] = field(default_factory=list)
     skipped: int = 0
@@ -158,7 +166,11 @@ class CrawlState:
     @classmethod
     def load(cls, path: Path) -> CrawlState:
         if path.exists():
-            return cls(**json.loads(path.read_text()))
+            data = json.loads(path.read_text())
+            # старый формат с номером страницы: ленту пройдём заново сверху,
+            # уже известных пользователей отсеет проверка seen
+            data.pop("activity_page", None)
+            return cls(**data)
         return cls()
 
     def save(self, path: Path) -> None:
@@ -212,14 +224,14 @@ def crawl(client: AniListClient, out_dir: Path, target_users: int, part_size: in
     while len(state.done) + len(batch_users) < target_users:
         position = len(batch_users)
         if position >= len(state.pending):
-            ids, has_next = client.activity_user_ids(state.activity_page)
-            state.activity_page += 1
+            ids, cursor = client.activity_user_ids(state.activity_before)
+            if cursor is None:
+                log.warning("лента активностей закончилась")
+                break
+            state.activity_before = cursor
             new_ids = [i for i in dict.fromkeys(ids) if i not in seen]
             seen.update(new_ids)
             state.pending.extend(new_ids)
-            if not has_next and not new_ids:
-                log.warning("лента активностей закончилась")
-                break
             continue
 
         user_id = state.pending[position]
