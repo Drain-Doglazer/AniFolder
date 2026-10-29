@@ -1,0 +1,86 @@
+import { useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { useMutation } from '@tanstack/react-query';
+import { loginApi } from '../api/auth';
+import { useAuthStore } from '../store';
+
+export const LoginPage = () => {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+
+  const navigate = useNavigate();
+  const login = useAuthStore((state) => state.login);
+
+  const mutation = useMutation({
+    mutationFn: loginApi,
+    onSuccess: (data) => {
+      login(data.data.user, data.data.access_token, data.data.refresh_token);
+      navigate('/me');
+    },
+    onError: (err: any) => {
+      setError(err.response?.data?.error?.message || 'Ошибка входа. Проверьте данные.');
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    mutation.mutate({ username, password });
+  };
+
+  return (
+    <div className="max-w-md mx-auto mt-10 p-6 rounded-lg shadow-lg" style={{ backgroundColor: '#2a2a32' }}>
+      <h2 className="text-2xl font-bold mb-6 text-center" style={{ color: '#f0ece2' }}>
+        Вход в <span style={{ color: '#d4845a' }}>AniFolder</span>
+      </h2>
+
+      {error && (
+        <div className="mb-4 p-3 rounded text-sm" style={{ backgroundColor: '#ef444420', color: '#ef4444', border: '1px solid #ef444440' }}>
+          {error}
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium mb-1" style={{ color: '#d1d5db' }}>Имя пользователя</label>
+          <input
+            type="text"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            className="w-full p-2 border rounded focus:ring-2 outline-none"
+            style={{ backgroundColor: '#1e1e24', color: '#f0ece2', borderColor: '#374151' }}
+            required
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1" style={{ color: '#d1d5db' }}>Пароль</label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full p-2 border rounded focus:ring-2 outline-none"
+            style={{ backgroundColor: '#1e1e24', color: '#f0ece2', borderColor: '#374151' }}
+            required
+          />
+        </div>
+
+        <button
+          type="submit"
+          disabled={mutation.isPending}
+          className="w-full py-2 px-4 font-medium rounded hover:opacity-90 disabled:opacity-50 transition-colors"
+          style={{ backgroundColor: '#d4845a', color: '#f0ece2' }}
+        >
+          {mutation.isPending ? 'Входим...' : 'Войти'}
+        </button>
+      </form>
+
+      <p className="mt-4 text-center text-sm" style={{ color: '#9ca3af' }}>
+        Нет аккаунта?{' '}
+        <Link to="/register" className="hover:underline" style={{ color: '#d4845a' }}>
+          Зарегистрироваться
+        </Link>
+      </p>
+    </div>
+  );
+};
