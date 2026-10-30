@@ -1,4 +1,5 @@
 import { apiClient } from './client';
+import { demoAnime, saveDemoItem } from './demo';
 import { Anime } from '../types/anime';
 
 const USE_MOCK = true;
@@ -26,20 +27,9 @@ export interface ListUpdateRequest {
 export const getAnimeDetails = async (id: number): Promise<{ data: Anime }> => {
   if (USE_MOCK) {
     await new Promise((r) => setTimeout(r, 200));
-    return {
-      data: {
-        id,
-        shikimori_id: 1000 + id,
-        title_ru: `Название тайтла #${id}`,
-        title_en: `Anime Title #${id}`,
-        kind: 'tv',
-        status: 'finished',
-        episodes: 24,
-        aired_on: '2023-04-01',
-        description: 'Это мок-описание тайтла. Здесь должен быть подробный сюжет, но так как бэкенд не запущен, мы показываем этот текст. Герои отправляются в путешествие, чтобы спасти мир.',
-        poster_url: 'https://via.placeholder.com/400x600?text=Anime+Poster',
-      },
-    };
+    const anime = demoAnime.find(item => item.id === id);
+    if (!anime) throw new Error('Тайтл не найден');
+    return { data: anime };
   }
   return apiClient.get<Anime>(`/anime/${id}`);
 };
@@ -70,7 +60,7 @@ export const createReview = async (id: number, data: ReviewCreateRequest): Promi
 export const updateMyList = async (animeId: number, data: ListUpdateRequest): Promise<{ data: any }> => {
   if (USE_MOCK) {
     await new Promise((r) => setTimeout(r, 300));
-    return { data: { success: true } };
+    return { data: saveDemoItem(animeId, data) };
   }
   return apiClient.put(`/me/list/${animeId}`, data);
 };

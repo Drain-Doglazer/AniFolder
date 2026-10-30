@@ -1,160 +1,77 @@
+import { Link } from 'react-router-dom';
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { getAnimeList, getGenres } from '../api/catalog';
 import { AnimeCard } from '../components/AnimeCard';
 import { useDebounce } from '../hooks/useDebounce';
 
+const PAGE_SIZE = 12;
+const statusLabels: Record<string, string> = { ongoing: 'Онгоинг', finished: 'Завершён', announced: 'Анонс' };
+
 export const CatalogPage = () => {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
-  const [selectedGenre, setSelectedGenre] = useState<number | undefined>(undefined);
-  const [status, setStatus] = useState<string | undefined>(undefined);
-
+  const [selectedGenre, setSelectedGenre] = useState<number | undefined>();
+  const [status, setStatus] = useState<string | undefined>();
   const debouncedSearch = useDebounce(search, 500);
-
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, isFetching, isPlaceholderData, refetch } = useQuery({
     queryKey: ['anime', page, debouncedSearch, selectedGenre, status],
-    queryFn: () =>
-      getAnimeList({
-        page,
-        limit: 12,
-        search: debouncedSearch || undefined,
-        genre_id: selectedGenre,
-        status: status,
-      }),
+    queryFn: () => getAnimeList({ page, limit: PAGE_SIZE, search: debouncedSearch || undefined, genre_id: selectedGenre, status }),
+    placeholderData: keepPreviousData,
   });
-
-  const { data: genresData } = useQuery({
-    queryKey: ['genres'],
-    queryFn: getGenres,
-  });
-
-  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearch(e.target.value);
-    setPage(1);
-  };
-
-  const handleGenreChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setSelectedGenre(e.target.value ? Number(e.target.value) : undefined);
-    setPage(1);
-  };
-
-  const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setStatus(e.target.value || undefined);
-    setPage(1);
-  };
-
+  const { data: genresData } = useQuery({ queryKey: ['genres'], queryFn: getGenres });
+  const genres = genresData?.data || [];
   const animeList = data?.data.items || [];
-  const currentPage = data?.data.page || 1;
-
-  // Единый стиль для инпутов/селектов
-  const inputStyle = {
-    backgroundColor: '#1e1e24',
-    color: '#f0ece2',
-    borderColor: '#374151',
-  };
-
-  // Стиль для placeholder
-  const placeholderStyle = {
-    ...inputStyle,
-  };
+  const total = data?.data.total || 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const hasFilters = Boolean(search || selectedGenre || status);
+  const resetFilters = () => { setSearch(''); setSelectedGenre(undefined); setStatus(undefined); setPage(1); };
 
   return (
-    <div>
-      <h1 className="text-3xl font-bold mb-6" style={{ color: '#f0ece2' }}>Каталог аниме</h1>
-
-      <div className="mb-8 flex flex-wrap gap-4 p-4 rounded-lg" style={{ backgroundColor: '#2a2a32', border: '1px solid #1f2937' }}>
-        <input
-          type="text"
-          placeholder="Поиск по названию..."
-          value={search}
-          onChange={handleSearch}
-          style={inputStyle}
-          className="p-2 rounded w-full md:w-1/3 outline-none"
-        />
-        <select
-          value={selectedGenre || ''}
-          onChange={handleGenreChange}
-          style={inputStyle}
-          className="p-2 rounded outline-none"
-        >
-          <option value="">Все жанры</option>
-          {genresData?.data.map((g) => (
-            <option key={g.id} value={g.id} style={{ backgroundColor: '#1e1e24', color: '#f0ece2' }}>
-              {g.name_ru}
-            </option>
-          ))}
-        </select>
-        <select
-          value={status || ''}
-          onChange={handleStatusChange}
-          style={inputStyle}
-          className="p-2 rounded outline-none"
-        >
-          <option value="">Любой статус</option>
-          <option value="ongoing" style={{ backgroundColor: '#1e1e24', color: '#f0ece2' }}>Онгоинг</option>
-          <option value="finished" style={{ backgroundColor: '#1e1e24', color: '#f0ece2' }}>Завершен</option>
-          <option value="announced" style={{ backgroundColor: '#1e1e24', color: '#f0ece2' }}>Анонс</option>
-        </select>
+    <section aria-labelledby="catalog-title">
+      <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="mb-2 text-xs font-medium uppercase tracking-[.18em] text-accent">Найди свою следующую историю</p>
+          <h1 id="catalog-title" className="text-3xl font-semibold tracking-tight sm:text-4xl">Каталог аниме</h1>
+          <p className="mt-3 max-w-xl text-sm leading-relaxed text-gray-400">Открывай новые миры и собирай то, что хочется посмотреть.</p>
+        </div>
+        {!isLoading && !isError && <span className="rounded-full border border-gray-800 px-3 py-1.5 text-xs text-gray-400">Тайтлов: <span className="font-medium text-gray-100">{total}</span></span>}
       </div>
-
-      {isLoading ? (
-        <div className="text-center py-20" style={{ color: '#9ca3af' }}>Загрузка каталога...</div>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {animeList.map((anime) => (
-              <AnimeCard key={anime.id} anime={anime} />
-            ))}
+      {!hasFilters && page === 1 && animeList[0] && <section aria-label="История для знакомства" className="mb-7 grid overflow-hidden rounded-2xl border border-gray-800 bg-[var(--surface)] sm:grid-cols-[1fr_200px]">
+        <div className="p-6 sm:p-8"><p className="mb-3 text-xs uppercase tracking-[.18em] text-accent">Начни с новой истории</p><h2 className="text-2xl font-semibold">{animeList[0].title_ru}</h2><p className="mt-3 max-w-xl text-sm leading-relaxed text-gray-400">{animeList[0].description}</p><Link className="button-primary mt-5" to={`/anime/${animeList[0].id}`}>Подробнее о тайтле →</Link></div>
+        <img src={animeList[0].poster_url} alt="" className="hidden h-full max-h-72 w-full object-cover sm:block" />
+      </section>}
+      <div className="mb-6 rounded-2xl border border-gray-800 bg-[var(--surface)] p-4 sm:p-5">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_1fr_1fr]">
+          <div className="sm:col-span-2 lg:col-span-1">
+            <label htmlFor="anime-search" className="filter-label">Название</label>
+            <div className="relative">
+              <svg className="pointer-events-none absolute left-3.5 top-3.5 text-gray-500" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" strokeWidth="1.8"/><path d="m16 16 4.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
+              <input id="anime-search" type="search" placeholder="Какое аниме ищем?" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} className="field !pl-11" />
+            </div>
           </div>
-
-          {animeList.length === 0 && (
-            <div className="text-center py-20 rounded-lg" style={{ backgroundColor: '#2a2a32', border: '1px solid #1f2937' }}>
-              <p className="text-lg" style={{ color: '#d1d5db' }}>Ничего не найдено</p>
-              <p className="text-sm mt-2" style={{ color: '#6b7280' }}>Попробуйте изменить параметры поиска</p>
-            </div>
-          )}
-
-          {animeList.length > 0 && (
-            <div className="mt-10 flex justify-center gap-4">
-              <button
-                disabled={currentPage === 1}
-                onClick={() => setPage((p) => p - 1)}
-                className="px-6 py-2 rounded-md transition-colors disabled:cursor-not-allowed"
-                style={{ 
-                  backgroundColor: '#2a2a32', 
-                  border: '1px solid #374151',
-                  color: '#d1d5db'
-                }}
-              >
-                ← Назад
-              </button>
-              <span 
-                className="px-4 py-2 rounded-md"
-                style={{ 
-                  backgroundColor: '#2a2a32', 
-                  border: '1px solid #374151',
-                  color: '#f0ece2'
-                }}
-              >
-                Страница {currentPage}
-              </span>
-              <button
-                disabled={animeList.length < 12}
-                onClick={() => setPage((p) => p + 1)}
-                className="px-6 py-2 rounded-md transition-colors disabled:cursor-not-allowed"
-                style={{ 
-                  backgroundColor: '#2a2a32', 
-                  border: '1px solid #374151',
-                  color: '#d1d5db'
-                }}
-              >
-                Вперед →
-              </button>
-            </div>
-          )}
-        </>
-      )}
-    </div>
+          <div><label htmlFor="anime-genre" className="filter-label">Жанр</label><select id="anime-genre" value={selectedGenre ?? ''} onChange={(event) => { setSelectedGenre(event.target.value ? Number(event.target.value) : undefined); setPage(1); }} className="field"><option value="">Все жанры</option>{genres.map((genre) => <option key={genre.id} value={genre.id}>{genre.name_ru}</option>)}</select></div>
+          <div><label htmlFor="anime-status" className="filter-label">Статус выхода</label><select id="anime-status" value={status || ''} onChange={(event) => { setStatus(event.target.value || undefined); setPage(1); }} className="field"><option value="">Любой статус</option>{Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
+        </div>
+        {hasFilters && <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-gray-800 pt-4">
+          {search && <button className="filter-chip" onClick={() => { setSearch(''); setPage(1); }} aria-label="Убрать поиск по названию">«{search}» <span aria-hidden="true">×</span></button>}
+          {selectedGenre && <button className="filter-chip" onClick={() => { setSelectedGenre(undefined); setPage(1); }} aria-label="Убрать фильтр по жанру">{genres.find((genre) => genre.id === selectedGenre)?.name_ru || 'Жанр'} <span aria-hidden="true">×</span></button>}
+          {status && <button className="filter-chip" onClick={() => { setStatus(undefined); setPage(1); }} aria-label="Убрать фильтр по статусу">{statusLabels[status]} <span aria-hidden="true">×</span></button>}
+          <button onClick={resetFilters} className="ml-auto rounded px-2 py-1 text-xs text-gray-400 hover:text-gray-100">Сбросить всё</button>
+        </div>}
+      </div>
+      <div className="mb-5 flex min-h-5 items-center justify-between text-xs text-gray-500"><span>Выбирай, что посмотреть дальше</span><span role="status">{isFetching && !isLoading ? 'Обновляем…' : 'Твоя новая коллекция начинается здесь'}</span></div>
+      {isError ? <div role="alert" className="rounded-2xl border border-gray-800 bg-[var(--surface)] px-6 py-16 text-center"><h2 className="text-lg font-semibold">Не удалось загрузить каталог</h2><p className="mb-5 mt-2 text-sm text-gray-400">Попробуй ещё раз через несколько секунд.</p><button className="button-secondary" onClick={() => refetch()}>Повторить</button></div> :
+        <div aria-busy={isFetching}>
+          {isLoading ? <div role="status"><span className="sr-only">Загрузка каталога</span><div className="grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 sm:gap-x-5 lg:grid-cols-4 xl:grid-cols-6">{Array.from({ length: PAGE_SIZE }, (_, index) => <div key={index} className="animate-pulse"><div className="aspect-[2/3] rounded-xl bg-[var(--surface)]" /><div className="mt-3 h-3 w-5/6 rounded bg-[var(--surface)]" /><div className="mt-3 h-2.5 w-1/2 rounded bg-[var(--surface)]" /></div>)}</div></div> : animeList.length ? <>
+            <div className={`grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 sm:gap-x-5 lg:grid-cols-4 xl:grid-cols-6 ${isPlaceholderData ? 'opacity-60' : ''}`}>{animeList.map((anime) => <AnimeCard key={anime.id} anime={anime} />)}</div>
+            <nav aria-label="Страницы каталога" className="mt-10 flex flex-wrap items-center justify-center gap-3 border-t border-gray-800 pt-7">
+              <button className="button-secondary" disabled={page <= 1 || isPlaceholderData} onClick={() => setPage((value) => value - 1)}>← Назад</button>
+              <span className="px-2 text-xs text-gray-400" aria-live="polite">{page} <span className="px-1 text-gray-600">/</span> {totalPages}</span>
+              <button className="button-secondary" disabled={page >= totalPages || isPlaceholderData} onClick={() => setPage((value) => value + 1)}>Дальше →</button>
+            </nav>
+          </> : <div className="rounded-2xl border border-gray-800 bg-[var(--surface)] px-6 py-16 text-center"><h2 className="text-lg font-semibold">Пока ничего не нашлось</h2><p className="mb-5 mt-2 text-sm text-gray-400">Попробуй другое название или убери часть фильтров.</p>{hasFilters && <button className="button-secondary" onClick={resetFilters}>Сбросить фильтры</button>}</div>}
+        </div>}
+    </section>
   );
 };

@@ -1,7 +1,8 @@
 import { useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { getAnimeDetails, getAnimeReviews, createReview, updateMyList } from '../api/anime';
+import { getAnimeDetails, getAnimeReviews, createReview } from '../api/anime';
+import { CollectionControl } from '../components/CollectionControl';
 import { useAuthStore } from '../store';
 
 export const AnimeDetailsPage = () => {
@@ -36,21 +37,6 @@ export const AnimeDetailsPage = () => {
     },
   });
 
-  const listMutation = useMutation({
-    mutationFn: (status: string) => updateMyList(animeId, { status: status as any }),
-    onSuccess: () => {
-      alert('Список обновлен!');
-    },
-  });
-
-  const handleAddToList = (status: string) => {
-    if (!isAuthenticated) {
-      alert('Пожалуйста, войдите в систему');
-      return;
-    }
-    listMutation.mutate(status);
-  };
-
   const handleReviewSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAuthenticated) {
@@ -69,16 +55,16 @@ export const AnimeDetailsPage = () => {
   }
 
   return (
-    <div className="max-w-5xl mx-auto rounded-lg shadow-lg overflow-hidden" style={{ backgroundColor: '#2a2a32' }}>
+    <div className="max-w-5xl mx-auto rounded-lg shadow-lg overflow-hidden" style={{ backgroundColor: '#27222b' }}>
       <div className="md:flex">
         <div className="md:w-1/3">
           <img
             src={anime.poster_url || 'https://via.placeholder.com/400x600?text=No+Poster'}
             alt={anime.title_ru}
-            className="w-full h-auto object-cover"
+            className="w-full aspect-[2/3] object-cover"
           />
         </div>
-        <div className="p-6 md:w-2/3">
+        <div className="p-6 sm:p-9 md:w-2/3">
           <h1 className="text-3xl font-bold mb-2 text-white">{anime.title_ru}</h1>
           <p className="text-gray-400 mb-4">
             {anime.title_en} • {anime.kind.toUpperCase()} • {new Date(anime.aired_on).getFullYear()}
@@ -87,36 +73,7 @@ export const AnimeDetailsPage = () => {
             {anime.description}
           </p>
 
-          <div className="flex flex-wrap gap-4 mb-6">
-            <button
-              onClick={() => handleAddToList('watching')}
-              className="text-white px-5 py-2 rounded-lg hover:opacity-90 transition-colors font-medium shadow-sm"
-              style={{ backgroundColor: '#d4845a' }}
-            >
-              Смотрю
-            </button>
-            <button
-              onClick={() => handleAddToList('planned')}
-              className="text-white px-5 py-2 rounded-lg hover:opacity-90 transition-colors font-medium shadow-sm"
-              style={{ backgroundColor: '#9b8ec4' }}
-            >
-              В планах
-            </button>
-            <button
-              onClick={() => handleAddToList('completed')}
-              className="text-white px-5 py-2 rounded-lg hover:opacity-90 transition-colors font-medium shadow-sm"
-              style={{ backgroundColor: '#7a9e7e' }}
-            >
-              Просмотрено
-            </button>
-            <button
-              onClick={() => handleAddToList('dropped')}
-              className="text-white px-5 py-2 rounded-lg hover:opacity-90 transition-colors font-medium shadow-sm"
-              style={{ backgroundColor: '#b07a7a' }}
-            >
-              Брошено
-            </button>
-          </div>
+          <CollectionControl animeId={animeId} />
         </div>
       </div>
 
@@ -129,7 +86,7 @@ export const AnimeDetailsPage = () => {
           <form
             onSubmit={handleReviewSubmit}
             className="mb-8 p-4 rounded-lg border border-gray-800"
-            style={{ backgroundColor: '#1e1e24' }}
+            style={{ backgroundColor: '#1c191f' }}
           >
             <h3 className="font-bold mb-2 text-gray-200">Оставить отзыв</h3>
             <textarea
@@ -159,7 +116,7 @@ export const AnimeDetailsPage = () => {
                 type="submit"
                 disabled={reviewMutation.isPending || !reviewText}
                 className="text-white px-4 py-2 rounded hover:opacity-90 disabled:opacity-50 transition-colors font-medium"
-                style={{ backgroundColor: '#d4845a' }}
+                style={{ backgroundColor: '#a884b5', color: '#211926' }}
               >
                 {reviewMutation.isPending ? 'Отправка...' : 'Отправить'}
               </button>
@@ -178,10 +135,10 @@ export const AnimeDetailsPage = () => {
             reviews.map((review) => (
               <div key={review.id} className="border-b border-gray-800 pb-4 last:border-0">
                 <div className="flex justify-between items-center mb-2">
-                  <span className="font-bold" style={{ color: '#d4845a' }}>{review.username}</span>
+                  <span className="font-bold" style={{ color: '#a884b5' }}>{review.username}</span>
                   <span 
                     className="px-2 py-0.5 rounded text-sm font-bold border"
-                    style={{ backgroundColor: '#d4845a20', color: '#d4845a', borderColor: '#d4845a40' }}
+                    style={{ backgroundColor: '#a884b520', color: '#a884b5', borderColor: '#a884b540' }}
                   >
                     {review.score}/10
                   </span>
@@ -198,3 +155,4 @@ export const AnimeDetailsPage = () => {
     </div>
   );
 };
+

@@ -15,7 +15,7 @@ export const TopicsPage = () => {
     queryKey: ['topics'],
     queryFn: ({ pageParam }) => getTopics(pageParam as string | undefined),
     getNextPageParam: (lastPage) => lastPage.data.next_cursor,
-    initialPageParam: undefined,
+    initialPageParam: undefined as string | undefined,
   });
 
   const topics = data?.pages.flatMap((page) => page.data.items) || [];
@@ -43,7 +43,7 @@ export const TopicsPage = () => {
           <button
             onClick={() => setShowForm(!showForm)}
             className="text-white px-4 py-2 rounded-lg hover:opacity-90 transition-colors font-medium"
-            style={{ backgroundColor: '#d4845a' }}
+            style={{ backgroundColor: '#a884b5', color: '#211926' }}
           >
             {showForm ? 'Отмена' : 'Создать тему'}
           </button>
@@ -51,7 +51,7 @@ export const TopicsPage = () => {
       </div>
 
       {showForm && (
-        <form onSubmit={handleSubmit} className="mb-8 p-6 rounded-lg shadow-sm border border-gray-800" style={{ backgroundColor: '#2a2a32' }}>
+        <form onSubmit={handleSubmit} className="mb-8 p-6 rounded-lg shadow-sm border border-gray-800" style={{ backgroundColor: '#27222b' }}>
           <h2 className="text-xl font-bold mb-4 text-gray-200">Новая тема</h2>
           <input
             type="text"
@@ -59,7 +59,7 @@ export const TopicsPage = () => {
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Заголовок темы"
             className="w-full border border-gray-700 rounded p-2 mb-3 outline-none text-white"
-            style={{ backgroundColor: '#1e1e24' }}
+            style={{ backgroundColor: '#1c191f' }}
             required
           />
           <textarea
@@ -67,7 +67,7 @@ export const TopicsPage = () => {
             onChange={(e) => setBody(e.target.value)}
             placeholder="Описание..."
             className="w-full border border-gray-700 rounded p-2 mb-3 outline-none text-white"
-            style={{ backgroundColor: '#1e1e24' }}
+            style={{ backgroundColor: '#1c191f' }}
             rows={4}
             required
           />
@@ -75,7 +75,7 @@ export const TopicsPage = () => {
             type="submit"
             disabled={createMutation.isPending}
             className="text-white px-4 py-2 rounded hover:opacity-90 disabled:opacity-50 font-medium"
-            style={{ backgroundColor: '#7a9e7e' }}
+            style={{ backgroundColor: '#829885' }}
           >
             {createMutation.isPending ? 'Создание...' : 'Опубликовать'}
           </button>
@@ -100,7 +100,7 @@ export const TopicsPage = () => {
                 onClick={() => fetchNextPage()}
                 disabled={isFetchingNextPage}
                 className="border border-gray-700 px-6 py-2 rounded-md shadow-sm hover:bg-gray-800 disabled:opacity-50 text-gray-300"
-                style={{ backgroundColor: '#2a2a32' }}
+                style={{ backgroundColor: '#27222b' }}
               >
                 {isFetchingNextPage ? 'Загрузка...' : 'Загрузить еще'}
               </button>
@@ -111,3 +111,5 @@ export const TopicsPage = () => {
     </div>
   );
 };
+
+
