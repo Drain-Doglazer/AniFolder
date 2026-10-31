@@ -26,11 +26,12 @@ def time_split(df: pd.DataFrame, test_fraction: float = 0.2) -> tuple[pd.DataFra
     В тест уходят последние floor(n * test_fraction) записей пользователя
     (после filter_interactions у всех n >= 5, то есть хотя бы одна).
     При равном updated_at порядок задаёт anime_id, чтобы деление было
-    воспроизводимым.
+    воспроизводимым. Записи без updated_at (у AniList это 17%, видимо
+    старые) считаются самыми ранними и всегда остаются в train.
     """
     if not 0 < test_fraction < 1:
         raise ValueError("test_fraction должен быть в (0, 1)")
-    ordered = df.sort_values(["user_id", "updated_at", "anime_id"])
+    ordered = df.sort_values(["user_id", "updated_at", "anime_id"], na_position="first")
     from_end = ordered.groupby("user_id").cumcount(ascending=False)
     # 1e-9 против ошибок округления: 0.29 * 100 = 28.999…, а должно быть 29
     n_test = (ordered["user_id"].map(ordered["user_id"].value_counts()) * test_fraction + 1e-9) // 1

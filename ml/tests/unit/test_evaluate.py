@@ -94,6 +94,14 @@ def test_time_split_breaks_ties_by_anime_id():
     assert list(first.anime_id) == list(second.anime_id) == [9]
 
 
+def test_time_split_keeps_records_without_time_in_train():
+    df = interactions([(1, anime, "completed", 8, anime) for anime in range(5)])
+    df.loc[df.anime_id == 4, "updated_at"] = pd.NaT  # без времени самая «поздняя» по anime_id
+    train, test = time_split(df)
+    assert list(test.anime_id) == [3]
+    assert 4 in set(train.anime_id)
+
+
 def test_time_split_handles_float_rounding():
     # 100 * 0.29 = 28.999… в float, должно получиться 29
     df = interactions([(1, anime, "completed", 8, anime) for anime in range(100)])
