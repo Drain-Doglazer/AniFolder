@@ -4,6 +4,8 @@ import pandas as pd
 import pytest
 
 from app.training.evaluate import (
+    cutoff_split,
+    default_cutoff,
     evaluate,
     ndcg_at_k,
     precision_at_k,
@@ -114,6 +116,56 @@ def test_time_split_rejects_bad_fraction():
         time_split(df, test_fraction=1.0)
 
 
+def test_default_cutoff_counts_days_back_from_latest_record():
+    df = interactions([(1, 1, "completed", 8, 0), (1, 2, "completed", 8, 100)])
+    assert default_cutoff(df, days=28) == pd.Timestamp("2026-01-01", tz="UTC") + pd.Timedelta(days=72)
+
+
+def test_cutoff_split_uses_one_date_for_everyone():
+    # Записи до 90-го дня — прошлое, с 90-го (включительно) — будущее
+    df = interactions(
+        [(1, anime, "completed", 8, day) for anime, day in zip(range(10, 17), [0, 10, 20, 30, 40, 90, 95])]
+        + [(2, anime, "completed", 8, day) for anime, day in zip(range(20, 27), [50, 60, 70, 80, 85, 89, 100])]
+    )
+    train, test = cutoff_split(df, days=10)  # последняя запись — день 100, отсечение — день 90
+
+    assert sorted(test[test.user_id == 1].anime_id) == [15, 16]  # день 90 уже тест
+    assert sorted(test[test.user_id == 2].anime_id) == [26]
+    assert test.updated_at.min() >= train.updated_at.max()
+    assert len(train) + len(test) == len(df)
+
+
+def test_cutoff_split_test_only_for_users_with_enough_history():
+    df = interactions(
+        [(1, anime, "completed", 8, day) for anime, day in zip(range(10, 16), [0, 1, 2, 3, 4, 50])]
+        + [(2, anime, "completed", 8, day) for anime, day in zip(range(20, 26), [0, 1, 2, 3, 50, 50])]
+        + [(3, 30, "completed", 8, 50)]  # новичок: только записи после отсечения
+    )
+    train, test = cutoff_split(df, cutoff=pd.Timestamp("2026-02-01", tz="UTC"), min_train=5)
+
+    assert set(test.user_id) == {1}  # у пользователя 2 до отсечения 4 записи
+    # будущие записи пользователей 2 и 3 не попадают и в train
+    assert not (train.updated_at >= pd.Timestamp("2026-02-01", tz="UTC")).any()
+    assert set(train[train.user_id == 2].anime_id) == {20, 21, 22, 23}  # прошлое остаётся для обучения
+    assert 3 not in set(train.user_id)
+
+
+def test_cutoff_split_keeps_records_without_time_in_train():
+    df = interactions([(1, anime, "completed", 8, day) for anime, day in zip(range(6), [0, 1, 2, 3, 4, 50])])
+    df.loc[df.anime_id == 0, "updated_at"] = pd.NaT
+    train, test = cutoff_split(df, days=28)
+    assert 0 in set(train.anime_id)
+    assert list(test.anime_id) == [5]
+
+
+def test_cutoff_split_rejects_bad_arguments():
+    df = interactions([(1, 1, "completed", 8, 0)])
+    with pytest.raises(ValueError):
+        cutoff_split(df, days=0)
+    with pytest.raises(ValueError):
+        cutoff_split(df, min_train=0)
+
+
 def test_relevant_items_excludes_dropped_and_low_scores():
     test = interactions(
         [
@@ -139,6 +191,17 @@ def test_evaluate_averages_over_users_and_penalizes_missing():
     assert result["precision@5"] == pytest.approx((2 / 5 + 0) / 2)
     assert result["recall@5"] == pytest.approx((2 / 3 + 0) / 2)
     assert result["ndcg@5"] == pytest.approx(ndcg_at_k(ANYA_RECS, ANYA_RELEVANT, 5) / 2)
+
+
+def test_evaluate_coverage_counts_distinct_titles_in_top_k():
+    relevant = {1: {1}, 2: {2}, 3: {3}, 4: set()}
+    recommendations = {
+        1: [1, 2, 9],  # 9 за пределами топ-2 — не считается
+        2: [2, 1],
+        3: [3, 4],
+        4: [7, 8],  # пользователь без релевантных в метриках не участвует
+    }
+    assert evaluate(recommendations, relevant, k=2)["coverage@2"] == 4  # {1, 2, 3, 4}
 
 
 def test_evaluate_without_relevant_users_fails():

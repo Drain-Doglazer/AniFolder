@@ -1,11 +1,19 @@
 """Оценка качества рекомендаций: holdout по времени и метрики top-k.
 
 Схема проверки:
-1. time_split: у каждого пользователя последние по updated_at записи
-   уходят в тест, модель учится на остальных.
+1. Деление на train и test по времени:
+   - cutoff_split (основная проверка): общая дата отсечения для всех,
+     в тест уходят последние days дней. Модель не видит будущего других
+     пользователей, как в реальной работе: обучили сегодня — рекомендуем
+     на следующие недели;
+   - time_split (вторая проверка): у каждого пользователя последние
+     по updated_at записи уходят в тест.
+   Цифры разных схем между собой не сравниваются, сравниваются модели
+   внутри одной схемы.
 2. relevant_items: какие тестовые тайтлы считаются удачной рекомендацией.
 3. evaluate: модель выдаёт топ-k для каждого пользователя, считаем
-   precision@k, recall@k, NDCG@k и усредняем по пользователям.
+   precision@k, recall@k, NDCG@k, усредняем по пользователям, и покрытие —
+   сколько разных тайтлов модель вообще рекомендует.
 
 updated_at — время последнего изменения записи, а не добавления: если
 пользователь поправил оценку старому тайтлу, тот попадёт в тест. Это шум,
@@ -37,6 +45,45 @@ def time_split(df: pd.DataFrame, test_fraction: float = 0.2) -> tuple[pd.DataFra
     n_test = (ordered["user_id"].map(ordered["user_id"].value_counts()) * test_fraction + 1e-9) // 1
     is_test = from_end < n_test
     return ordered[~is_test].reset_index(drop=True), ordered[is_test].reset_index(drop=True)
+
+
+def default_cutoff(df: pd.DataFrame, days: int = 28) -> pd.Timestamp:
+    """Дата отсечения: days дней до самой поздней записи в данных."""
+    if days <= 0:
+        raise ValueError("days должен быть положительным")
+    last = df["updated_at"].max()
+    if pd.isna(last):
+        raise ValueError("ни у одной записи нет updated_at")
+    return last - pd.Timedelta(days=days)
+
+
+def cutoff_split(
+    df: pd.DataFrame,
+    days: int = 28,
+    min_train: int = 5,
+    cutoff: pd.Timestamp | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Делит взаимодействия по общей дате отсечения.
+
+    train — все записи до cutoff (по умолчанию default_cutoff(df, days)),
+    включая пользователей, которые в проверку не попадут: их записи
+    помогают модели. Записи без updated_at считаются старыми и идут в train.
+
+    test — записи начиная с cutoff, но только у пользователей, у которых
+    в train не меньше min_train записей: по меньшему числу вкус не понять.
+    Остальные записи после cutoff выбрасываются: в train они дали бы модели
+    заглянуть в будущее.
+    """
+    if min_train < 1:
+        raise ValueError("min_train должен быть не меньше 1")
+    if cutoff is None:
+        cutoff = default_cutoff(df, days)
+    after = (df["updated_at"] >= cutoff).fillna(False).astype(bool)
+    train = df[~after]
+    train_counts = train["user_id"].value_counts()
+    known = train_counts.index[train_counts >= min_train]
+    test = df[after & df["user_id"].isin(known)]
+    return train.reset_index(drop=True), test.reset_index(drop=True)
 
 
 def relevant_items(test: pd.DataFrame, min_score: int = 5) -> dict[int, set[int]]:
@@ -84,16 +131,22 @@ def evaluate(
 
     Пользователь без рекомендаций получает нули: модель, которая молчит,
     не должна выглядеть лучше.
+
+    coverage@k — число разных тайтлов в топ-k у этих пользователей. Высокий
+    NDCG при покрытии в десятки тайтлов значит «всем советуем одно и то же».
     """
     users = [user for user, items in relevant.items() if items]
     if not users:
         raise ValueError("нет пользователей с релевантными тайтлами в тесте")
     totals = {f"precision@{k}": 0.0, f"recall@{k}": 0.0, f"ndcg@{k}": 0.0}
+    shown: set[int] = set()
     for user in users:
         recs = recommendations.get(user, [])
+        shown.update(recs[:k])
         totals[f"precision@{k}"] += precision_at_k(recs, relevant[user], k)
         totals[f"recall@{k}"] += recall_at_k(recs, relevant[user], k)
         totals[f"ndcg@{k}"] += ndcg_at_k(recs, relevant[user], k)
     result = {name: value / len(users) for name, value in totals.items()}
+    result[f"coverage@{k}"] = len(shown)
     result["users"] = len(users)
     return result
