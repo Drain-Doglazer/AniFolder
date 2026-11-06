@@ -21,8 +21,8 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://localhost:6379/0"
 
-    # Фронтенд в dev: Vite — 5173 порт
-    cors_origins: str = "http://localhost:5173"
+    # Origins фронтенда для CORS (через запятую); dev-сервер Антона — порт 3000 с прокси /api
+    cors_origins: str = "http://localhost:5173,http://localhost:3000"
 
 
 settings = Settings()
