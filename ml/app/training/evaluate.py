@@ -1,6 +1,10 @@
 """Оценка качества рекомендаций: holdout по времени и метрики top-k.
 
 Схема проверки:
+0. chronological_split: фиксированные границы train/validation/test без
+   фильтрации пользователей и тайтлов. Параметры выбираются на validation,
+   test используется после выбора. Фильтр редких применяется только к train;
+   полная история train сохраняется для исключений и холодного старта.
 1. Деление на train и test по времени:
    - cutoff_split (основная проверка): общая дата отсечения для всех,
      в тест уходят последние days дней. Модель не видит будущего других
@@ -16,8 +20,9 @@
    сколько разных тайтлов модель вообще рекомендует.
 
 updated_at — время последнего изменения записи, а не добавления: если
-пользователь поправил оценку старому тайтлу, тот попадёт в тест. Это шум,
-но не утечка: модель всё равно не видит тестовых записей.
+пользователь поправил оценку старому тайтлу, тот попадёт в тест. Такое
+разбиение снимка списков не восстанавливает историю просмотров, а записи
+без даты условно считаются старыми. Это ограничение офлайн-оценки.
 """
 
 from __future__ import annotations
@@ -27,6 +32,37 @@ from collections.abc import Mapping, Sequence
 from numbers import Integral
 
 import pandas as pd
+
+
+def chronological_split(
+    df: pd.DataFrame,
+    *,
+    validation_start: pd.Timestamp,
+    test_start: pd.Timestamp,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Три непересекающихся периода с явно заданными границами с часовым поясом.
+
+    train: дата < validation_start или NaT; validation: [validation_start,
+    test_start); test: дата >= test_start. Ни одна запись не удаляется.
+    Границы задаются явно, чтобы фильтрация и новые данные не сдвигали их.
+    Входной updated_at должен быть datetime с часовым поясом.
+
+    Не фильтруйте df перед разбиением. Группы пользователей для оценки
+    определяются по полной предшествующей истории, независимо от фильтра
+    обучения; неизвестные модели тайтлы в validation/test сохраняются.
+    """
+    validation_start, test_start = pd.Timestamp(validation_start), pd.Timestamp(test_start)
+    if any(pd.isna(t) or t.tzinfo is None for t in (validation_start, test_start)):
+        raise ValueError("границы должны иметь часовой пояс и не быть NaT")
+    if validation_start >= test_start:
+        raise ValueError("validation_start должен быть раньше test_start")
+    dates = df["updated_at"]
+    if not isinstance(dates.dtype, pd.DatetimeTZDtype):
+        raise ValueError("updated_at должен быть datetime с часовым поясом")
+    train = dates.isna() | (dates < validation_start)
+    validation = (dates >= validation_start) & (dates < test_start)
+    test = dates >= test_start
+    return tuple(df[mask].reset_index(drop=True) for mask in (train, validation, test))
 
 
 def time_split(df: pd.DataFrame, test_fraction: float = 0.2) -> tuple[pd.DataFrame, pd.DataFrame]:

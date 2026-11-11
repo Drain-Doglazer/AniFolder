@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from app.training.evaluate import (
+    chronological_split,
     cutoff_split,
     default_cutoff,
     evaluate,
@@ -13,6 +14,7 @@ from app.training.evaluate import (
     relevant_items,
     time_split,
 )
+from app.training.datasets import filter_interactions
 
 
 def interactions(rows):
@@ -21,6 +23,77 @@ def interactions(rows):
     df["score"] = df["score"].astype("Int8")
     df["updated_at"] = pd.Timestamp("2026-01-01", tz="UTC") + pd.to_timedelta(df.pop("day"), unit="D")
     return df
+
+
+def test_chronological_split_boundaries_undated_and_new_users():
+    df = interactions([(1, 10, "completed", 8, 0), (1, 11, "completed", 8, 9),
+                       (1, 12, "completed", 8, 10), (2, 13, "planned", None, 19),
+                       (3, 14, "completed", 9, 20), (4, 15, "completed", 9, 21)])
+    df.loc[df.anime_id == 10, "updated_at"] = pd.NaT
+    start = pd.Timestamp("2026-01-01", tz="UTC")
+    train, validation, test = chronological_split(
+        df.sample(frac=1, random_state=0), validation_start=start + pd.Timedelta(days=10),
+        test_start=start + pd.Timedelta(days=20))
+    assert set(train.anime_id) == {10, 11}
+    assert set(validation.anime_id) == {12, 13}
+    assert set(test.anime_id) == {14, 15}
+    assert sum(map(len, (train, validation, test))) == len(df)
+    assert validation.updated_at.notna().all() and test.updated_at.notna().all()
+
+
+def test_future_interactions_do_not_rescue_rare_training_items():
+    df = interactions([(1, 10, "completed", 8, 0), (1, 20, "completed", 8, 0),
+                       (2, 20, "completed", 8, 0), (2, 10, "completed", 8, 10),
+                       (3, 30, "planned", None, 20)])
+    history, validation, test = chronological_split(
+        df, validation_start=pd.Timestamp("2026-01-11", tz="UTC"),
+        test_start=pd.Timestamp("2026-01-21", tz="UTC"))
+    training = filter_interactions(history, min_user_items=1, min_item_users=2)
+    assert set(training.anime_id) == {20}
+    assert set(history.anime_id) == {10, 20}
+    assert relevant_items(validation) == {2: {10}}  # не удаляем недоступную модели цель
+    assert relevant_items(test) == {3: {30}}  # новичок и новый тайтл сохраняются
+
+
+@pytest.mark.parametrize("validation_start,test_start", [
+    ("2026-02-01Z", "2026-01-01Z"),
+    ("2026-01-01Z", "2026-01-01Z"),
+    ("2026-01-01", "2026-02-01Z"),
+    (None, "2026-02-01Z"),
+])
+def test_chronological_split_rejects_invalid_boundaries(validation_start, test_start):
+    def timestamp(value):
+        return pd.Timestamp(value.replace("Z", "T00:00:00Z")) if value else pd.NaT
+    df = interactions([(1, 1, "completed", 8, 0)])
+    with pytest.raises(ValueError):
+        chronological_split(df, validation_start=timestamp(validation_start), test_start=timestamp(test_start))
+
+
+def test_chronological_split_allows_empty_periods():
+    df = interactions([(1, 1, "completed", 8, 0)])
+    for source in (df, df.iloc[:0]):
+        train, validation, test = chronological_split(
+            source, validation_start=pd.Timestamp("2026-02-01", tz="UTC"),
+            test_start=pd.Timestamp("2026-03-01", tz="UTC"))
+        assert len(train) == len(source)
+        assert validation.empty and test.empty
+
+
+def test_chronological_split_compares_absolute_time_across_timezones():
+    df = interactions([(1, 1, "completed", 8, 0)])
+    train, validation, test = chronological_split(
+        df, validation_start=pd.Timestamp("2026-01-01T03:00:00+03:00"),
+        test_start=pd.Timestamp("2026-01-02T03:00:00+03:00"))
+    assert train.empty and test.empty
+    assert validation.anime_id.tolist() == [1]
+
+
+def test_chronological_split_rejects_dates_without_timezone():
+    df = interactions([(1, 1, "completed", 8, 0)])
+    df["updated_at"] = df.updated_at.dt.tz_localize(None)
+    with pytest.raises(ValueError, match="updated_at"):
+        chronological_split(df, validation_start=pd.Timestamp("2026-02-01", tz="UTC"),
+                            test_start=pd.Timestamp("2026-03-01", tz="UTC"))
 
 
 # Пример из объяснения: в тесте у Ани {Clannad, Mushishi, Monster},
