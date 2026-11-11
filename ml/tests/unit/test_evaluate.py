@@ -69,6 +69,35 @@ def test_short_recommendation_list_is_penalized_in_precision():
     assert precision_at_k([MONSTER], {MONSTER}, 5) == pytest.approx(1 / 5)
 
 
+@pytest.mark.parametrize("metric", [precision_at_k, recall_at_k, ndcg_at_k])
+@pytest.mark.parametrize("k", [0, -1, 1.5, True])
+def test_metrics_reject_invalid_k(metric, k):
+    with pytest.raises(ValueError, match="k"):
+        metric([], set(), k)
+
+
+@pytest.mark.parametrize("metric", [precision_at_k, recall_at_k, ndcg_at_k])
+@pytest.mark.parametrize("relevant", [{7}, set()])
+def test_metrics_reject_duplicate_recommendations(metric, relevant):
+    with pytest.raises(ValueError, match="повтор"):
+        metric([7, 7], relevant, 2)
+
+
+def test_metrics_ignore_duplicates_outside_top_k():
+    assert evaluate({1: [7, 8, 7]}, {1: {7}}, k=2)["recall@2"] == 1.0
+
+
+def test_evaluate_rejects_duplicate_recommendations():
+    with pytest.raises(ValueError, match="повтор"):
+        evaluate({1: [7, 7]}, {1: {7}}, k=2)
+
+
+@pytest.mark.parametrize("k", [0, -1, 1.5, True])
+def test_evaluate_rejects_invalid_k_even_without_users(k):
+    with pytest.raises(ValueError, match="k"):
+        evaluate({}, {}, k=k)
+
+
 def test_time_split_moves_latest_records_to_test():
     df = interactions(
         [(1, anime, "completed", 8, day) for anime, day in zip(range(10, 20), range(10))]
@@ -108,6 +137,18 @@ def test_time_split_handles_float_rounding():
     # 100 * 0.29 = 28.999… в float, должно получиться 29
     df = interactions([(1, anime, "completed", 8, anime) for anime in range(100)])
     assert len(time_split(df, test_fraction=0.29)[1]) == 29
+
+
+@pytest.mark.parametrize("dated_count", [0, 1])
+def test_time_split_does_not_fill_test_with_undated_records(dated_count):
+    df = interactions([(1, anime, "completed", 8, anime) for anime in range(10)])
+    df.loc[df.anime_id >= dated_count, "updated_at"] = pd.NaT
+    train, test = time_split(df)
+    assert len(test) == dated_count  # целевые 2 записи ограничены числом известных дат
+    assert test.updated_at.notna().all()
+    assert len(train) + len(test) == len(df)
+    assert set(train.anime_id).isdisjoint(test.anime_id)
+    assert train.updated_at.isna().sum() == 10 - dated_count
 
 
 def test_time_split_rejects_bad_fraction():

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
+from numbers import Integral
 
 import pandas as pd
 
@@ -31,8 +32,9 @@ import pandas as pd
 def time_split(df: pd.DataFrame, test_fraction: float = 0.2) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Делит взаимодействия на train и test по времени внутри каждого пользователя.
 
-    В тест уходят последние floor(n * test_fraction) записей пользователя
-    (после filter_interactions у всех n >= 5, то есть хотя бы одна).
+    В тест уходят до floor(n * test_fraction) последних записей пользователя,
+    где n — общее число его записей. Если записей с известной датой меньше,
+    тест уменьшается; без известных дат пользователь целиком остаётся в train.
     При равном updated_at порядок задаёт anime_id, чтобы деление было
     воспроизводимым. Записи без updated_at (у AniList это 17%, видимо
     старые) считаются самыми ранними и всегда остаются в train.
@@ -43,7 +45,7 @@ def time_split(df: pd.DataFrame, test_fraction: float = 0.2) -> tuple[pd.DataFra
     from_end = ordered.groupby("user_id").cumcount(ascending=False)
     # 1e-9 против ошибок округления: 0.29 * 100 = 28.999…, а должно быть 29
     n_test = (ordered["user_id"].map(ordered["user_id"].value_counts()) * test_fraction + 1e-9) // 1
-    is_test = from_end < n_test
+    is_test = (from_end < n_test) & ordered["updated_at"].notna()
     return ordered[~is_test].reset_index(drop=True), ordered[is_test].reset_index(drop=True)
 
 
@@ -97,17 +99,31 @@ def relevant_items(test: pd.DataFrame, min_score: int = 5) -> dict[int, set[int]
     return test[good].groupby("user_id")["anime_id"].agg(set).to_dict()
 
 
+def _validate_k(k: int) -> None:
+    if isinstance(k, bool) or not isinstance(k, Integral) or k <= 0:
+        raise ValueError("k должен быть положительным целым числом")
+
+
+def _validated_top_k(recommended: Sequence[int], k: int) -> Sequence[int]:
+    _validate_k(k)
+    top = recommended[:k]
+    if len(set(top)) != len(top):
+        raise ValueError("повторяющиеся тайтлы в top-k рекомендациях")
+    return top
+
+
 def precision_at_k(recommended: Sequence[int], relevant: set[int], k: int) -> float:
     """Доля попаданий среди первых k рекомендаций."""
-    hits = sum(item in relevant for item in recommended[:k])
+    hits = sum(item in relevant for item in _validated_top_k(recommended, k))
     return hits / k
 
 
 def recall_at_k(recommended: Sequence[int], relevant: set[int], k: int) -> float:
     """Доля релевантных тайтлов, найденных в первых k рекомендациях."""
+    top = _validated_top_k(recommended, k)
     if not relevant:
         return 0.0
-    hits = sum(item in relevant for item in recommended[:k])
+    hits = sum(item in relevant for item in top)
     return hits / len(relevant)
 
 
@@ -117,7 +133,8 @@ def ndcg_at_k(recommended: Sequence[int], relevant: set[int], k: int) -> float:
     DCG = сумма 1 / log2(позиция + 1) по попаданиям; делим на DCG идеального
     списка, где все min(k, |relevant|) попаданий стоят в начале.
     """
-    dcg = sum(1 / math.log2(pos + 2) for pos, item in enumerate(recommended[:k]) if item in relevant)
+    top = _validated_top_k(recommended, k)
+    dcg = sum(1 / math.log2(pos + 2) for pos, item in enumerate(top) if item in relevant)
     ideal = sum(1 / math.log2(pos + 2) for pos in range(min(k, len(relevant))))
     return dcg / ideal if ideal else 0.0
 
@@ -134,7 +151,12 @@ def evaluate(
 
     coverage@k — число разных тайтлов в топ-k у этих пользователей. Высокий
     NDCG при покрытии в десятки тайтлов значит «всем советуем одно и то же».
+
+    k должен быть положительным целым. Повторы в оцениваемом топ-k — ошибка
+    выдачи (ValueError), а не дополнительные попадания. За пределами k
+    рекомендации не проверяются и не учитываются.
     """
+    _validate_k(k)
     users = [user for user, items in relevant.items() if items]
     if not users:
         raise ValueError("нет пользователей с релевантными тайтлами в тесте")

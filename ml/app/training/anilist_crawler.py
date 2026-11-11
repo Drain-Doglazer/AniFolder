@@ -62,6 +62,14 @@ class UserUnavailable(Exception):
     """Профиль закрыт или удалён: пользователя пропускаем."""
 
 
+class GraphQLError(RuntimeError):
+    """Ошибка запроса, которую нельзя автоматически считать закрытым профилем."""
+
+    def __init__(self, errors: list[dict]):
+        self.errors = errors
+        super().__init__("; ".join(e.get("message", "неизвестная ошибка") for e in errors))
+
+
 def parse_entries(user_id: int, collection: dict) -> list[dict]:
     """Превращает ответ MediaListCollection в строки таблицы.
 
@@ -135,11 +143,29 @@ class AniListClient:
                 time.sleep(retry_delay(attempt))
                 continue
 
-            body = resp.json()
-            if resp.status_code == 404 or (body.get("errors") and not body.get("data")):
-                messages = [e.get("message", "") for e in body.get("errors", [])]
-                raise UserUnavailable("; ".join(messages) or str(resp.status_code))
+            try:
+                body = resp.json()
+            except ValueError:
+                resp.raise_for_status()  # HTML с HTTP-ошибкой — не закрытый профиль
+                log.warning("невалидный JSON, попытка %d", attempt)
+                time.sleep(retry_delay(attempt))
+                continue
+            if not isinstance(body, dict):
+                raise RuntimeError("AniList вернул неожиданный формат ответа")
+            errors = body.get("errors")
+            if errors:
+                # Ошибки GraphQL возможны и при HTTP 200, и с частичными data.
+                # Частичный список не сохраняем как полный.
+                if all(e.get("status") in (429, 500, 502, 503, 504) for e in errors):
+                    log.warning("временная ошибка GraphQL, попытка %d", attempt)
+                    time.sleep(retry_delay(attempt))
+                    continue
+                if resp.status_code not in (200, 404):
+                    resp.raise_for_status()
+                raise GraphQLError(errors)
             resp.raise_for_status()
+            if not isinstance(body.get("data"), dict):
+                raise RuntimeError("AniList не вернул data")
             return body["data"]
         raise RuntimeError(f"AniList не ответил после {self.max_retries} попыток")
 
@@ -155,8 +181,17 @@ class AniListClient:
         return ids, cursor
 
     def user_entries(self, user_id: int) -> list[dict]:
-        data = self.query(LIST_QUERY, {"userId": user_id})
-        return parse_entries(user_id, data["MediaListCollection"] or {})
+        try:
+            data = self.query(LIST_QUERY, {"userId": user_id})
+        except GraphQLError as exc:
+            # Только явный Not Found при запросе конкретного списка.
+            if all(e.get("status") == 404 for e in exc.errors):
+                raise UserUnavailable(str(exc)) from exc
+            raise
+        collection = data.get("MediaListCollection")
+        if not isinstance(collection, dict) or "lists" not in collection:
+            raise RuntimeError("AniList не вернул MediaListCollection.lists")
+        return parse_entries(user_id, collection)
 
 
 @dataclass

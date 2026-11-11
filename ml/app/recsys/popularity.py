@@ -16,9 +16,15 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from numbers import Integral
 
 import numpy as np
 import pandas as pd
+
+
+def _validate_k(k: int) -> None:
+    if isinstance(k, bool) or not isinstance(k, Integral) or k <= 0:
+        raise ValueError("k должен быть положительным целым числом")
 
 
 class PopularityRecommender:
@@ -33,9 +39,18 @@ class PopularityRecommender:
             raise ValueError("window_days должен быть положительным или None")
         self.window_days = window_days
 
-    def fit(self, interactions: pd.DataFrame, now: pd.Timestamp | None = None) -> PopularityRecommender:
-        """now — момент «сейчас», по умолчанию самая поздняя запись."""
-        self.seen_: dict[int, set[int]] = interactions.groupby("user_id")["anime_id"].agg(set).to_dict()
+    def fit(
+        self, interactions: pd.DataFrame, now: pd.Timestamp | None = None,
+        *, history: pd.DataFrame | None = None,
+    ) -> PopularityRecommender:
+        """now — момент «сейчас», по умолчанию самая поздняя запись.
+
+        history — полная история для исключений, включая новичков и dropped;
+        по умолчанию interactions. При офлайн-проверке передавайте только
+        историю из train, без скрытых тестовых взаимодействий.
+        """
+        history = interactions if history is None else history
+        self.seen_: dict[int, set[int]] = history.groupby("user_id")["anime_id"].agg(set).to_dict()
         counted = interactions[interactions["status"] != "dropped"]
         if self.window_days is not None:
             if now is None:
@@ -55,7 +70,8 @@ class PopularityRecommender:
         return self.items_
 
     def recommend(self, user_id: int, k: int = 10) -> list[int]:
-        """Топ-k для пользователя без тайтлов из его списка."""
+        """Топ-k без тайтлов из списка пользователя; k — положительное целое."""
+        _validate_k(k)
         seen = self.seen_.get(user_id, set())
         recs: list[int] = []
         for item in self._ranking(user_id):
@@ -66,6 +82,7 @@ class PopularityRecommender:
         return recs
 
     def recommend_many(self, users: Iterable[int], k: int = 10) -> dict[int, list[int]]:
+        _validate_k(k)
         return {user: self.recommend(user, k) for user in users}
 
 
@@ -95,8 +112,13 @@ class GenrePopularityRecommender(PopularityRecommender):
         self.beta = beta
         self.min_score = min_score
 
-    def fit(self, interactions: pd.DataFrame, now: pd.Timestamp | None = None) -> GenrePopularityRecommender:
-        super().fit(interactions, now)
+    def fit(
+        self, interactions: pd.DataFrame, now: pd.Timestamp | None = None,
+        *, history: pd.DataFrame | None = None,
+    ) -> GenrePopularityRecommender:
+        """Популярность — по interactions, предпочтения и исключения — по history."""
+        super().fit(interactions, now, history=history)
+        history = interactions if history is None else history
         genres = sorted({g for gs in self.item_genres.values() for g in gs})
         column = {g: j for j, g in enumerate(genres)}
 
@@ -108,9 +130,10 @@ class GenrePopularityRecommender(PopularityRecommender):
             for g in item_genres:
                 self.genre_matrix_[i, column[g]] = 1 / len(item_genres)
 
-        score = interactions["score"].astype("Float64")
-        positive = (interactions["status"] != "dropped") & ~(score < self.min_score).fillna(False)
-        liked = interactions.loc[positive & interactions["anime_id"].isin(self.item_genres), ["user_id", "anime_id"]]
+        score = history["score"].astype("Float64")
+        positive = (history["status"] != "dropped") & ~(score < self.min_score).fillna(False)
+        known_genres = {item for item, genres in self.item_genres.items() if genres}
+        liked = history.loc[positive & history["anime_id"].isin(known_genres), ["user_id", "anime_id"]]
         self.preferences_: dict[int, np.ndarray] = {}
         for user, items in liked.groupby("user_id")["anime_id"]:
             pref = np.zeros(len(genres))

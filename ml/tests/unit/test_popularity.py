@@ -123,3 +123,33 @@ def test_bad_parameters_fail():
         PopularityRecommender(window_days=0)
     with pytest.raises(ValueError):
         GenrePopularityRecommender({}, beta=-1)
+
+
+@pytest.mark.parametrize("k", [0, -1, 1.5, True])
+@pytest.mark.parametrize("genre_based", [False, True])
+def test_recommend_rejects_invalid_k(k, genre_based):
+    model = GenrePopularityRecommender({}) if genre_based else PopularityRecommender()
+    model.fit(interactions(crowd(1, 3)))
+    with pytest.raises(ValueError, match="k"):
+        model.recommend(1, k=k)
+    with pytest.raises(ValueError, match="k"):
+        model.recommend_many([1], k=k)
+    with pytest.raises(ValueError, match="k"):
+        model.recommend_many([], k=k)
+
+
+def test_full_history_preserves_cold_start_taste_and_exclusions():
+    training = interactions(crowd(TITLE_A, 26) + crowd(TITLE_B, 18))
+    history = interactions(BORYA_ROWS + [(2, TITLE_A, "dropped", None, 1),
+                                        (2, TITLE_B, "completed", 2, 1)])
+    model = GenrePopularityRecommender(BORYA_GENRES).fit(training, history=history)
+    assert model.recommend(BORYA, 2) == [TITLE_B, TITLE_A]
+    assert model.recommend(2, 2) == []
+    # История не добавляет голоса к популярности обучающей выборки.
+    assert model.popularity_.tolist() == [26, 18]
+
+
+def test_empty_genres_do_not_dilute_known_preferences():
+    df = interactions(BORYA_ROWS + [(BORYA, 99, "completed", 9, 1)])
+    model = GenrePopularityRecommender({**BORYA_GENRES, 99: set()}).fit(df)
+    assert model.preferences_[BORYA].tolist() == pytest.approx([1, 2 / 3, 0])

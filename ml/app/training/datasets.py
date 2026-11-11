@@ -105,15 +105,32 @@ def filter_interactions(df: pd.DataFrame, min_user_items: int = 5, min_item_user
         df = df[keep]
 
 
+def load_interactions(
+    engine: Engine,
+    anilist_path: Path | None = DEFAULT_ANILIST_DIR,
+) -> pd.DataFrame:
+    """Полная история сайта + AniList в id каталога, без фильтра редких записей.
+
+    Используется для холодного старта и исключения уже добавленных тайтлов.
+    Для офлайн-проверки сначала разделите эту историю по времени: тестовые
+    записи не должны попадать ни в обучение, ни в историю рекомендателя.
+    """
+    parts = [load_site(engine)]
+    if anilist_path is not None and Path(anilist_path).exists():
+        parts.append(to_catalog_ids(load_anilist(anilist_path), load_catalog_mapping(engine)))
+    return pd.concat(parts, ignore_index=True)
+
+
 def load_training_data(
     engine: Engine,
     anilist_path: Path | None = DEFAULT_ANILIST_DIR,
     min_user_items: int = 5,
     min_item_users: int = 5,
 ) -> pd.DataFrame:
-    """Всё для обучения: пользователи сайта + AniList, id тайтлов из нашего каталога."""
-    parts = [load_site(engine)]
-    if anilist_path is not None and Path(anilist_path).exists():
-        parts.append(to_catalog_ids(load_anilist(anilist_path), load_catalog_mapping(engine)))
-    df = pd.concat(parts, ignore_index=True)
+    """Фильтрованные данные для обучения; не использовать как полную историю.
+
+    Для cold start и seen используйте load_interactions. При оценке качества
+    фильтруйте train после временного разбиения, а не результат этой функции.
+    """
+    df = load_interactions(engine, anilist_path)
     return filter_interactions(df, min_user_items, min_item_users)
