@@ -153,3 +153,15 @@ def test_empty_genres_do_not_dilute_known_preferences():
     df = interactions(BORYA_ROWS + [(BORYA, 99, "completed", 9, 1)])
     model = GenrePopularityRecommender({**BORYA_GENRES, 99: set()}).fit(df)
     assert model.preferences_[BORYA].tolist() == pytest.approx([1, 2 / 3, 0])
+
+
+def test_string_genres_work_and_users_without_positive_history_keep_plain_ranking():
+    df = interactions(BORYA_ROWS + [(2, 11, "dropped", None, 1),
+                                  (2, 12, "completed", 2, 1)])
+    names = {DRAMA: "Drama", ROMANCE: "Romance", ACTION: "Action"}
+    genres = {item: {names[g] for g in gs} for item, gs in BORYA_GENRES.items()}
+    model = GenrePopularityRecommender(genres).fit(df)
+    plain = PopularityRecommender().fit(df)
+    assert model.recommend(BORYA, 2) == [TITLE_B, TITLE_A]
+    for user in [2, 99999]:
+        assert model.recommend(user) == plain.recommend(user)

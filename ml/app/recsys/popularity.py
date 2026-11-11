@@ -100,7 +100,7 @@ class GenrePopularityRecommender(PopularityRecommender):
 
     def __init__(
         self,
-        item_genres: Mapping[int, Iterable[int]],
+        item_genres: Mapping[int, Iterable[int]] | Mapping[int, Iterable[str]],
         window_days: float | None = 28,
         beta: float = 1.0,
         min_score: int = 5,
