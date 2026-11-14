@@ -16,6 +16,8 @@ def engine(tmp_path):
             "CREATE TABLE recommendations (user_id BIGINT, anime_id BIGINT, relevance REAL, "
             "model_version TEXT, PRIMARY KEY (user_id, anime_id))"
         ))
+        # Намеренная проверка границы сервисов: внутренний GET возвращает сохранённый
+        # топ даже при наличии записи в списке; актуальную фильтрацию делает backend.
         connection.execute(text("CREATE TABLE user_anime (user_id BIGINT, anime_id BIGINT)"))
         connection.execute(text("INSERT INTO user_anime VALUES (1, 101)"))
         connection.execute(text(

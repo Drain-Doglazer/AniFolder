@@ -1,4 +1,4 @@
-# Recommendation Service. Python 3.12.
+# Recommendation Service. Требуется Python >=3.12; проверено на Python 3.12.
 -r requirements-service.txt
 implicit>=0.7.3,<0.8
 numpy>=2.2
