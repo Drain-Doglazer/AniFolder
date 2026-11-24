@@ -4,7 +4,7 @@
 автоматически и доступен по `/docs` (эталон для уже реализованных эндпоинтов,
 этот документ — для согласований и будущих этапов).
 
-Статусы: ✅ реализовано · 🚧 контракт согласован, реализация на этапах 3+
+Статусы: ✅ реализовано
 
 ## Общие правила
 
@@ -31,7 +31,7 @@
 ### Пагинация
 
 - Каталог — постраничная: `page` (с 1) и `limit` (≤ 50), ответ `{items, total, page, limit}`.
-- Ленты и комментарии — курсорная: 🚧 запрос `cursor` + `limit`, ответ `{items, next_cursor}`,
+- Ленты и комментарии — курсорная: запрос `cursor` + `limit`, ответ `{items, next_cursor}`,
   `next_cursor = null` — записи кончились. Курсор opaque, клиент не парсит.
 
 ## Здоровье сервиса ✅
@@ -158,12 +158,16 @@
 `stats` — `null`, если тайтла ещё не касались пользователи; `avg_score` — строка (Decimal,
 до двух знаков). Ошибки: 404 `ANIME_NOT_FOUND`.
 
-## Список пользователя 🚧 (этап 3)
+## Список пользователя ✅
 
 ### PUT /me/list/{anime_id} · DELETE /me/list/{anime_id}
 
 Запрос PUT: `{ "status": "watching", "score": 9, "episodes_watched": 12 }`
 (`status`: `planned|watching|completed|on_hold|dropped`; `score` 1–10, опционально).
+
+Семантика опциональных полей: пропущенное поле сохраняет прежнее значение;
+явный `"score": null` снимает оценку; прогресс сбрасывается явным
+`"episodes_watched": 0`. `episodes_watched` больше числа эпизодов тайтла — 422.
 
 Ответ 200:
 
@@ -178,7 +182,9 @@
 }
 ```
 
-Ошибки: 401 · 404 `ANIME_NOT_FOUND` · 422 `VALIDATION_ERROR` (оценка/прогресс вне диапазона).
+Ошибки: 401 · 404 `ANIME_NOT_FOUND` (нет такого тайтла) · 422 `VALIDATION_ERROR`
+(оценка/прогресс вне диапазона). DELETE дополнительно: 404 `LIST_ENTRY_NOT_FOUND`
+(тайтл есть в каталоге, но не в списке пользователя).
 
 ### GET /me/recommendations ✅
 
@@ -199,7 +205,7 @@
 ML исключает историю на момент обучения; backend исключает также изменения списка после обучения.
 `relevance` — нормированный ранг 1/rank, не вероятность. Внутренний API, обучение и статус задания — в [ml/README.md](../ml/README.md).
 
-## Профили 🚧 (этап 3–4)
+## Профили ✅
 
 ### GET /users/{username}
 
@@ -226,7 +232,7 @@ ML исключает историю на момент обучения; backend
 Ответ: `{items: UserListAnime[], total, page, limit}`, элемент — AnimeCard + поля записи
 списка (см. `UserListAnime` на фронте).
 
-## Лента активности 🚧 (этап 3–4)
+## Лента активности ✅
 
 ### GET /users/{username}/activity?cursor=...&limit=20
 
@@ -255,39 +261,48 @@ ML исключает историю на момент обучения; backend
 | `list_added` | `{ "status": "watching" }` | тайтла не было в списке |
 | `status_changed` | `{ "from": "planned", "to": "watching" }` | смена статуса у существующей записи |
 | `progress_updated` | `{ "episodes_watched": 12 }` | изменился прогресс (без смены статуса) |
-| `scored` | `{ "score": 9 }` | выставлена/изменена оценка |
+| `scored` | `{ "score": 9 }` или `{ "score": null }` | выставлена/изменена оценка; `null` — снята |
 | `reviewed` | `{ "review_id": 123 }` | опубликован отзыв |
 | `topic_created` | `{ "topic_id": 5 }` | создана тема (anime_id может быть null) |
 | `commented` | `{ "topic_id": 5, "comment_id": 77 }` | комментарий (anime_id может быть null) |
 
 `anime` — `null`, когда событие не про тайтл.
 
-## Отзывы и сообщество 🚧 (этап 4–5)
+## Отзывы и сообщество ✅
 
 ### GET /anime/{id}/reviews?page=1&limit=20
 
 `{items: Review[], total, page, limit}`; Review: `{id, user_id, username, score, text, created_at}`.
+Новые первыми. Автор удалил аккаунт — отзыв остаётся: `user_id` = null,
+`username` = `"deleted_user"`. Нет такого тайтла — 404 `ANIME_NOT_FOUND`.
 
 ### POST /anime/{id}/reviews
 
 Запрос: `{ "score": 9, "text": "..." }` (текст 1–20000, один отзыв на тайтл на пользователя).
-Ошибки: 401 · 404 `ANIME_NOT_FOUND` · 409 `REVIEW_EXISTS`.
+Ответ 201. Ошибки: 401 · 404 `ANIME_NOT_FOUND` · 409 `REVIEW_EXISTS`.
 
 ### PATCH /reviews/{id} · DELETE /reviews/{id}
 
-Только автор. Ошибки: 401 · 403 `FORBIDDEN` · 404 `REVIEW_NOT_FOUND`.
+Только автор. PATCH меняет только переданные поля (`score` и/или `text`); пустой
+PATCH или явный null поля — 422. DELETE отвечает `{"ok": true}`.
+Ошибки: 401 · 403 `FORBIDDEN` · 404 `REVIEW_NOT_FOUND`.
 
 ### GET /topics?anime_id=...&page=1&limit=20 · POST /topics
 
 Topic: `{id, author_id, username, anime_id, title, body, comments_count, created_at, last_comment_at}`.
-Сортировка — по `last_comment_at DESC`.
+Сортировка — по `last_comment_at DESC` (поднимается новым комментарием; счётчики ведёт
+триггер БД). Удалённый автор: `author_id` = null, `username` = `"deleted_user"`.
+POST: 201; невалидный `anime_id` — 404 `ANIME_NOT_FOUND`.
 
 ### GET /topics/{id}/comments?cursor=...&limit=50 · POST /topics/{id}/comments
 
 Comment: `{id, topic_id, author_id, username, parent_id, body, created_at}`.
-`parent_id` — ответ на комментарий той же темы (проверяет БД).
+`parent_id` — ответ на комментарий той же темы (проверяет БД); чужая тема или
+несуществующий родитель — 422 `VALIDATION_ERROR`. Новые первыми, курсорная
+пагинация как у ленты активности. Удалённый автор: `author_id` = null,
+`username` = `"deleted_user"`. POST: 201; нет такой темы — 404 `TOPIC_NOT_FOUND`.
 
-## Совместимость вкусов 🚧 (этап 6)
+## Совместимость вкусов ✅
 
 ### GET /users/{username}/compatibility
 
@@ -297,7 +312,10 @@ Comment: `{id, topic_id, author_id, username, parent_id, body, created_at}`.
 { "common_titles": 23, "compatibility": 0.81 }
 ```
 
-`compatibility` — null, если общих оценок меньше порога (например, 5). Требуется авторизация.
+`compatibility` — корреляция Пирсона по общим оценкам (тайтлы, оценённые обоими),
+округление до двух знаков; null, если общих оценок меньше 5 или у одного из двух
+все оценки одинаковые (корреляция не определена). Требуется авторизация;
+пользователь не найден — 404 `USER_NOT_FOUND`.
 
 ## Справочник кодов ошибок
 
@@ -306,7 +324,7 @@ Comment: `{id, topic_id, author_id, username, parent_id, body, created_at}`.
 | 401 | `AUTHENTICATION_REQUIRED`, `INVALID_CREDENTIALS`, `TOKEN_EXPIRED`, `INVALID_TOKEN` | auth, защищённые роуты |
 | 401 | `INVALID_REFRESH_TOKEN`, `REFRESH_TOKEN_EXPIRED`, `REFRESH_TOKEN_REUSED` | /auth/refresh |
 | 403 | `FORBIDDEN` | чужой отзыв (этап 4) |
-| 404 | `ANIME_NOT_FOUND`, `USER_NOT_FOUND`, `REVIEW_NOT_FOUND`, `TOPIC_NOT_FOUND` | каталог, профили |
+| 404 | `ANIME_NOT_FOUND`, `USER_NOT_FOUND`, `LIST_ENTRY_NOT_FOUND`, `REVIEW_NOT_FOUND`, `TOPIC_NOT_FOUND` | каталог, профили, список |
 | 409 | `USERNAME_TAKEN`, `EMAIL_TAKEN`, `REVIEW_EXISTS` | register, отзывы |
 | 422 | `VALIDATION_ERROR` | везде, где тело/параметры |
 | 429 | `RATE_LIMITED` | /auth/login, /auth/register |
