@@ -1,7 +1,9 @@
+import {useCursorFeed} from '../hooks/useCursorFeed';
 import { useParams } from 'react-router-dom';
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useRef, useState } from 'react';
 import { getTopicComments, createComment } from '../api/community';
+import { authorName, type Comment } from '../types/community';
 import { CommentItem } from '../components/CommentItem';
 import { useAuthStore } from '../store';
 
@@ -12,20 +14,25 @@ export const TopicDetailsPage = () => {
   const queryClient = useQueryClient();
   const [commentBody, setCommentBody] = useState('');
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
-    queryKey: ['comments', topicId],
-    queryFn: ({ pageParam }) => getTopicComments(topicId, pageParam as string | undefined),
-    getNextPageParam: (lastPage) => lastPage.data.next_cursor,
-    initialPageParam: undefined as string | undefined,
-    enabled: !!topicId,
-  });
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useCursorFeed(['comments', topicId], cursor => getTopicComments(topicId, cursor));
 
+  const [parent, setParent] = useState<Comment | null>(null);
+  const replyTo = parent?.topic_id === topicId ? parent : null;
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const comments = data?.pages.flatMap((page) => page.data.items) || [];
 
+  const commentsById = new Map(comments.map(comment => [comment.id, comment] as const));
+  function startReply(comment: Comment) {
+    setParent(comment);
+    inputRef.current?.focus();
+  }
+
   const commentMutation = useMutation({
-    mutationFn: (body: string) => createComment(topicId, { body }),
+    mutationFn: (body: string) => createComment(topicId, { body, parent_id: replyTo?.id }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['comments', topicId] });
+      setParent(null);
+      queryClient.invalidateQueries({queryKey:['topics']});
       setCommentBody('');
     },
   });
@@ -47,10 +54,19 @@ export const TopicDetailsPage = () => {
 
       {isAuthenticated && (
         <form onSubmit={handleSubmit} className="mb-8 p-4 rounded-lg shadow-sm border border-gray-800" style={{ backgroundColor: '#27222b' }}>
+          {replyTo && (
+            <div className="mb-3 border-l-2 border-purple-400 pl-3 text-sm">
+              <strong>Ответ на комментарий · {authorName(replyTo.username)}</strong>
+              <p className="truncate">{replyTo.body}</p>
+              <button type="button" className="underline" onClick={() => setParent(null)}>Отменить ответ</button>
+            </div>
+          )}
           <textarea
+            ref={inputRef}
             value={commentBody}
             onChange={(e) => setCommentBody(e.target.value)}
-            placeholder="Написать комментарий..."
+            aria-label={replyTo ? "Текст ответа" : "Текст комментария"}
+            placeholder={replyTo ? "Написать ответ..." : "Написать комментарий..."}
             className="w-full border border-gray-700 rounded p-2 mb-3 outline-none text-white"
             style={{ backgroundColor: '#1c191f' }}
             rows={3}
@@ -68,9 +84,17 @@ export const TopicDetailsPage = () => {
       )}
 
       <div className="space-y-4">
-        {comments.map((comment) => <CommentItem key={comment.id} comment={comment} />)}
+        {comments.map(comment => (
+          <CommentItem
+            key={comment.id}
+            comment={comment}
+            parent={comment.parent_id == null ? undefined : commentsById.get(comment.parent_id)}
+            onReply={isAuthenticated ? startReply : undefined}
+          />
+        ))}
       </div>
 
+      {commentMutation.isError && <p role="alert">Не удалось отправить комментарий</p>}
       {comments.length === 0 && !isLoading && (
         <div className="text-center py-10 text-gray-400">Комментариев пока нет.</div>
       )}
@@ -90,5 +114,3 @@ export const TopicDetailsPage = () => {
     </div>
   );
 };
-
-

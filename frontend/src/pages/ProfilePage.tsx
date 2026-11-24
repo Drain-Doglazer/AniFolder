@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { listKey } from '../api/demo';
+import { listKey } from '../api/profile';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getMyList, updateListItem, removeFromList, ListUpdateRequest } from '../api/profile';
@@ -33,8 +33,8 @@ export const ProfilePage = () => {
   const fullList = data?.data || [];
 
   const updateMutation = useMutation({
-    mutationFn: ({ animeId, payload, anime }: { animeId: number; payload: ListUpdateRequest; anime?: Anime }) =>
-      updateListItem(animeId, payload, anime),
+    mutationFn: ({ animeId, payload }: { animeId: number; payload: ListUpdateRequest; anime?: Anime }) =>
+      updateListItem(animeId, payload, fullList.find(item => item.id === animeId)?.status ?? payload.status ?? 'planned'),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['myList'] }); queryClient.invalidateQueries({ queryKey: ['recommendations'] }); },
   });
 
@@ -72,7 +72,7 @@ export const ProfilePage = () => {
   return (
     <div className="max-w-6xl mx-auto">
       <div className="mb-8 p-6 rounded-lg shadow-sm border border-gray-800" style={{ backgroundColor: '#27222b' }}>
-        <h1 className="text-3xl font-bold text-white mb-2">Коллекция {user?.username}</h1>
+        <h1 className="text-3xl font-bold text-white mb-2">Коллекция <Link to={'/users/'+user?.username}>{user?.username}</Link></h1>
         <p className="text-gray-400">
           В вашем списке <span className="font-bold" style={{ color: '#a884b5' }}>{fullList.length}</span> тайтлов
         </p>

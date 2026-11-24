@@ -13,9 +13,9 @@ export const TopicsPage = () => {
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
     queryKey: ['topics'],
-    queryFn: ({ pageParam }) => getTopics(pageParam as string | undefined),
-    getNextPageParam: (lastPage) => lastPage.data.next_cursor,
-    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) => getTopics(pageParam),
+    getNextPageParam: (lastPage) => lastPage.data.page * lastPage.data.limit < lastPage.data.total ? lastPage.data.page + 1 : undefined,
+    initialPageParam: 1,
   });
 
   const topics = data?.pages.flatMap((page) => page.data.items) || [];
