@@ -13,6 +13,12 @@ from app.core.config import settings
 # access-токен: тип зашит в payload, чтобы refresh нельзя было подсунуть в защищённый роут
 _TOKEN_TYPE_ACCESS = "access"
 
+# Допуск по времени при проверке. iat пишется с точностью до секунды, и при
+# микроскачке системных часов назад (NTP на VM, восстановление из снапшота)
+# свежевыпущенный токен секунду-другую «из будущего» — без leeway PyJWT
+# отклонял бы его с ImmatureSignatureError (флака INVALID_TOKEN в тестах).
+_CLOCK_LEEWAY_SECONDS = 10
+
 
 def hash_password(password: str) -> str:
     """bcrypt-хэш пароля. bcrypt использует максимум 72 байта — длину пароля валидирует схема."""
@@ -47,6 +53,7 @@ def decode_access_token(token: str) -> int:
             settings.jwt_secret,
             algorithms=[settings.jwt_algorithm],
             options={"require": ["exp", "sub"]},
+            leeway=timedelta(seconds=_CLOCK_LEEWAY_SECONDS),
         )
     except jwt.ExpiredSignatureError:
         raise errors.AppError(401, errors.TOKEN_EXPIRED, "Срок действия токена истёк")
