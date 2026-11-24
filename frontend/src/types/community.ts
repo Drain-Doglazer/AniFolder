@@ -1,9 +1,8 @@
 export interface Topic {
   id: number;
-  author_id: number;
-  author_username: string;
+  author_id: number | null;
+  username: string | null;
   anime_id: number | null;
-  anime_title: string | null;
   title: string;
   body: string;
   comments_count: number;
@@ -14,8 +13,8 @@ export interface Topic {
 export interface Comment {
   id: number;
   topic_id: number;
-  author_id: number;
-  author_username: string;
+  author_id: number | null;
+  username: string | null;
   parent_id: number | null;
   body: string;
   created_at: string;
@@ -36,3 +35,4 @@ export interface CreateCommentRequest {
   body: string;
   parent_id?: number;
 }
+export const authorName = (name:string|null) => !name || name === 'deleted_user' ? 'удалённый пользователь' : name;

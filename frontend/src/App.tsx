@@ -8,6 +8,8 @@ import { AnimeDetailsPage } from './pages/AnimeDetailsPage';
 import { TopicsPage } from './pages/TopicsPage';
 import { TopicDetailsPage } from './pages/TopicDetailsPage';
 
+import { PublicProfile } from './pages/PublicProfile';
+
 function App() {
   return (
     <BrowserRouter>
@@ -16,6 +18,7 @@ function App() {
           <Route index element={<CatalogPage />} />
           <Route path="catalog" element={<CatalogPage />} />
           <Route path="anime/:id" element={<AnimeDetailsPage />} />
+          <Route path="users/:username" element={<PublicProfile />} />
           <Route path="me" element={<ProfilePage />} />
           <Route path="community" element={<TopicsPage />} />
           <Route path="topics/:id" element={<TopicDetailsPage />} />

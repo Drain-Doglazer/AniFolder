@@ -1,16 +1,26 @@
-import { apiClient } from './client';
-import { Anime, UserListAnime, Recommendation } from '../types/anime';
-import { readDemoList, saveDemoItem, deleteDemoItem, ListPatch } from './demo';
-import { getAnimeList } from './catalog';
-const USE_MOCK = true;
+import {apiClient} from './client';
+import {ActivityItem, Recommendation, UserListAnime, UserProfile, Page} from '../types/anime';
+import {CursorPaginatedResponse} from '../types/community';
+import {useAuthStore} from '../store';
+
+export type ListPatch = Partial<Pick<UserListAnime,'status'|'score'|'episodes_watched'>>;
 export type ListUpdateRequest = ListPatch;
-export const getMyList = async (): Promise<{ data: UserListAnime[] }> => USE_MOCK ? { data: readDemoList() } : apiClient.get<UserListAnime[]>('/me/list');
-export const getUserList = async (username: string): Promise<{ data: UserListAnime[] }> => USE_MOCK ? { data: [] } : apiClient.get<UserListAnime[]>(`/users/${username}/list`);
-export const updateListItem = async (animeId: number, data: ListUpdateRequest, anime?: Anime) => USE_MOCK ? { data: saveDemoItem(animeId, data, anime) } : apiClient.put(`/me/list/${animeId}`, data);
-export const removeFromList = async (animeId: number) => { if (USE_MOCK) { deleteDemoItem(animeId); return { data: { success: true } }; } return apiClient.delete(`/me/list/${animeId}`); };
-export const getMyRecommendations = async (): Promise<{ data: Recommendation[] }> => {
-  if (!USE_MOCK) return apiClient.get<Recommendation[]>('/me/recommendations');
-  const list = readDemoList();
-  const { data } = await getAnimeList({ limit: 12 });
-  return { data: data.items.filter(anime => !list.some(item => item.id === anime.id)).slice(0, 4).map(anime => ({ anime_id: anime.id, relevance: 0, anime })) };
-};
+export const listKey = () => ['myList', useAuthStore.getState().user?.username];
+const profileUrl = (name: string) => '/users/' + encodeURIComponent(name);
+export const getProfile = (name: string) => apiClient.get<UserProfile>(profileUrl(name));
+export const getActivity = (name: string, cursor?: string) => apiClient.get<CursorPaginatedResponse<ActivityItem>>(profileUrl(name) + '/activity', {params:{cursor}});
+export const getCompatibility = (name: string) => apiClient.get<{common_titles:number; compatibility:number|null}>(profileUrl(name) + '/compatibility');
+export const getUserList = (name: string,page = 1) => apiClient.get<Page<UserListAnime>>(profileUrl(name) + '/list',{params:{page,limit:50}});
+export async function getMyList() {
+  const name = useAuthStore.getState().user!.username;
+  const items: UserListAnime[] = [];
+  for (let page = 1; ; page++) {
+    const {data} = await getUserList(name,page);
+    items.push(...data.items);
+    if (!data.items.length || page * data.limit >= data.total) return {data:items};
+  }
+}
+export const updateListItem = (id:number, patch: ListPatch, status: UserListAnime['status']) =>
+  apiClient.put('/me/list/' + id, {status, ...patch});
+export const removeFromList = (id:number) => apiClient.delete('/me/list/' + id);
+export const getMyRecommendations = () => apiClient.get<Recommendation[]>('/me/recommendations');

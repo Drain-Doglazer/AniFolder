@@ -1,13 +1,14 @@
+import { Page } from '../types/anime';
 import { apiClient } from './client';
-import { saveDemoItem } from './demo';
+
 import { AnimeDetail } from '../types/anime';
 
-const USE_MOCK = true;
+
 
 export interface Review {
   id: number;
-  user_id: number;
-  username: string;
+  user_id: number | null;
+  username: string | null;
   score: number;
   text: string;
   created_at: string;
@@ -18,42 +19,10 @@ export interface ReviewCreateRequest {
   text: string;
 }
 
-export interface ListUpdateRequest {
-  status: 'watching' | 'planned' | 'completed' | 'dropped' | 'on_hold';
-  score?: number;
-  episodes_watched?: number;
-}
-
 export const getAnimeDetails = (id: number): Promise<{ data: AnimeDetail }> =>
   apiClient.get<AnimeDetail>(`/anime/${id}`);
 
-export const getAnimeReviews = async (id: number): Promise<{ data: Review[] }> => {
-  if (USE_MOCK) {
-    await new Promise((r) => setTimeout(r, 200));
-    return {
-      data: [
-        { id: 1, user_id: 1, username: 'TestUser', score: 9, text: 'Отличное аниме! Мок-отзыв.', created_at: new Date().toISOString() },
-        { id: 2, user_id: 2, username: 'AnimeFan', score: 7, text: 'Неплохо, но концовка смазана.', created_at: new Date().toISOString() },
-      ],
-    };
-  }
-  return apiClient.get<Review[]>(`/anime/${id}/reviews`);
-};
-
-export const createReview = async (id: number, data: ReviewCreateRequest): Promise<{ data: Review }> => {
-  if (USE_MOCK) {
-    await new Promise((r) => setTimeout(r, 300));
-    return {
-      data: { id: Date.now(), user_id: 1, username: 'Me', score: data.score, text: data.text, created_at: new Date().toISOString() },
-    };
-  }
-  return apiClient.post<Review>(`/anime/${id}/reviews`, data);
-};
-
-export const updateMyList = async (animeId: number, data: ListUpdateRequest): Promise<{ data: any }> => {
-  if (USE_MOCK) {
-    await new Promise((r) => setTimeout(r, 300));
-    return { data: saveDemoItem(animeId, data, (await getAnimeDetails(animeId)).data) };
-  }
-  return apiClient.put(`/me/list/${animeId}`, data);
-};
+export const getAnimeReviews = (id:number,page=1) => apiClient.get<Page<Review>>('/anime/'+id+'/reviews',{params:{page}});
+export const createReview = (id:number,data:ReviewCreateRequest) => apiClient.post<Review>('/anime/'+id+'/reviews',data);
+export const patchReview = (id:number,data:Partial<ReviewCreateRequest>) => apiClient.patch<Review>('/reviews/'+id,data);
+export const deleteReview = (id:number) => apiClient.delete('/reviews/'+id);

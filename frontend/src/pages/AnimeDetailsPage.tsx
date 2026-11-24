@@ -1,18 +1,34 @@
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { getAnimeDetails, getAnimeReviews, createReview } from '../api/anime';
+import { getAnimeDetails, getAnimeReviews, createReview, patchReview, deleteReview, Review } from '../api/anime';
 import { AnimePoster } from '../components/AnimePoster';
 import { displayGenre, displayTitle } from '../types/anime';
 import { CollectionControl } from '../components/CollectionControl';
 import { useAuthStore } from '../store';
 
+import {getApiError} from '../api/client';
+import {authorName} from '../types/community';
+
 export const AnimeDetailsPage = () => {
+  const {id} = useParams();
+  const owner = useAuthStore(s=>s.user?.id);
+  return <Details key={id+'-'+owner}/>;
+};
+const Details = () => {
   const { id } = useParams<{ id: string }>();
   const animeId = Number(id);
   const queryClient = useQueryClient();
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
 
+  const [page,setPage] = useState(1);
+  const [editing,setEditing] = useState<Review|null>(null);
+  function startEditing(review:Review) {
+    setEditing(review);
+    setReviewText(review.text);
+    setReviewScore(review.score);
+    document.getElementById('review-text')?.focus();
+  }
   const [reviewText, setReviewText] = useState('');
   const [reviewScore, setReviewScore] = useState(10);
 
@@ -24,21 +40,29 @@ export const AnimeDetailsPage = () => {
   const anime = animeData?.data;
 
   const { data: reviewsData, isLoading: isLoadingReviews } = useQuery({
-    queryKey: ['reviews', animeId],
-    queryFn: () => getAnimeReviews(animeId),
+    queryKey: ['reviews', animeId,page],
+    queryFn: () => getAnimeReviews(animeId,page),
     enabled: !!animeId,
   });
-  const reviews = reviewsData?.data || [];
+  const reviews = reviewsData?.data.items || [];
 
   const reviewMutation = useMutation({
-    mutationFn: (data: { score: number; text: string }) => createReview(animeId, data),
+    mutationFn: (data: { score: number; text: string }) => editing ? patchReview(editing.id,{
+      ...(data.score !== editing.score && {score:data.score}),
+      ...(data.text !== editing.text && {text:data.text}),
+    }) : createReview(animeId,data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['reviews', animeId] });
+      setEditing(null);
       setReviewText('');
       setReviewScore(10);
     },
   });
 
+  const removal = useMutation({mutationFn:deleteReview,onSuccess:()=>{
+    setEditing(null); setReviewText(''); setPage(1);
+    queryClient.invalidateQueries({queryKey:['reviews',animeId]});
+  }});
   const handleReviewSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAuthenticated) {
@@ -96,7 +120,7 @@ export const AnimeDetailsPage = () => {
 
       <div className="p-6 border-t border-gray-800">
         <h2 className="text-2xl font-bold mb-4 text-white">
-          Отзывы сообщества ({reviews.length})
+          Отзывы сообщества ({reviewsData?.data.total ?? 0})
         </h2>
 
         {isAuthenticated && (
@@ -105,8 +129,9 @@ export const AnimeDetailsPage = () => {
             className="mb-8 p-4 rounded-lg border border-gray-800"
             style={{ backgroundColor: '#1c191f' }}
           >
-            <h3 className="font-bold mb-2 text-gray-200">Оставить отзыв</h3>
+            <h3 className="font-bold mb-2 text-gray-200">{editing ? 'Редактировать отзыв' : 'Оставить отзыв'}</h3>
             <textarea
+              id="review-text" maxLength={20000}
               value={reviewText}
               onChange={(e) => setReviewText(e.target.value)}
               className="w-full border border-gray-700 bg-gray-900 text-white rounded p-2 mb-3 focus:ring-2 outline-none"
@@ -131,16 +156,21 @@ export const AnimeDetailsPage = () => {
               </div>
               <button
                 type="submit"
-                disabled={reviewMutation.isPending || !reviewText}
+                disabled={reviewMutation.isPending || !reviewText.trim() || (editing?.text === reviewText && editing.score === reviewScore)}
                 className="text-white px-4 py-2 rounded hover:opacity-90 disabled:opacity-50 transition-colors font-medium"
                 style={{ backgroundColor: '#a884b5', color: '#211926' }}
               >
                 {reviewMutation.isPending ? 'Отправка...' : 'Отправить'}
               </button>
             </div>
+            {editing && <button type="button" onClick={()=>{setEditing(null);setReviewText('');setReviewScore(10)}}>Отмена</button>}
+            {reviewMutation.isError && <p role="alert">{getApiError(reviewMutation.error)?.code === 'REVIEW_EXISTS' ? 'Вы уже писали отзыв. Выберите «Редактировать» возле своего отзыва.' : 'Не удалось сохранить отзыв'}</p>}
           </form>
         )}
 
+        {removal.isError && <p role="alert">Не удалось удалить отзыв</p>}
+        {page>1 && <button onClick={()=>setPage(page-1)}>Предыдущие отзывы</button>}
+        {reviewsData && page*reviewsData.data.limit<reviewsData.data.total && <button onClick={()=>setPage(page+1)}>Следующие отзывы</button>}
         <div className="space-y-4">
           {isLoadingReviews ? (
             <div className="text-center py-10 text-gray-400">Загрузка отзывов...</div>
@@ -152,7 +182,7 @@ export const AnimeDetailsPage = () => {
             reviews.map((review) => (
               <div key={review.id} className="border-b border-gray-800 pb-4 last:border-0">
                 <div className="flex justify-between items-center mb-2">
-                  <span className="font-bold" style={{ color: '#a884b5' }}>{review.username}</span>
+                  <span className="font-bold" style={{ color: '#a884b5' }}>{review.user_id && review.username ? <Link to={'/users/'+review.username}>{authorName(review.username)}</Link> : 'удалённый пользователь'}</span>
                   <span 
                     className="px-2 py-0.5 rounded text-sm font-bold border"
                     style={{ backgroundColor: '#a884b520', color: '#a884b5', borderColor: '#a884b540' }}
@@ -161,6 +191,7 @@ export const AnimeDetailsPage = () => {
                   </span>
                 </div>
                 <p className="text-gray-300 text-sm whitespace-pre-line">{review.text}</p>
+                 {user && user.id === review.user_id && <div className="flex gap-3"><button onClick={()=>startEditing(review)}>Редактировать</button><button disabled={removal.isPending} onClick={()=>removal.mutate(review.id)}>Удалить</button></div>}
                 <p className="text-xs text-gray-500 mt-2">
                   {new Date(review.created_at).toLocaleDateString()}
                 </p>
@@ -172,4 +203,3 @@ export const AnimeDetailsPage = () => {
     </div>
   );
 };
-

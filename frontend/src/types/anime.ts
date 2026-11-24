@@ -50,16 +50,16 @@ export interface Recommendation {
   anime: Anime;
 }
 
-export interface ActivityItem {
-  id: number;
-  type: 'added_to_list' | 'score_changed' | 'progress_updated' | 'review_created';
-  anime_id: number;
-  payload: {
-    status?: string;
-    score?: number;
-    episodes_watched?: number;
-    review_text?: string;
-  };
-  created_at: string;
-  anime?: Anime;
+export interface Page<T> { items:T[]; total:number; page:number; limit:number }
+export interface UserProfile {
+  id:number; username:string; avatar_url:string|null; bio:string|null; created_at:string;
+  stats: Record<UserListAnime['status'], number> & { scores_count:number; mean_score:string|null };
 }
+type Status = UserListAnime['status'];
+type Events = {
+  list_added:{status:Status}; status_changed:{from:Status;to:Status};
+  progress_updated:{episodes_watched:number}; scored:{score:number|null};
+  reviewed:{review_id:number}; topic_created:{topic_id:number}; commented:{topic_id:number;comment_id:number};
+};
+export type ActivityItem = {id:number; created_at:string; anime_id:number|null; anime:Anime|null} &
+  { [K in keyof Events]: {type:K;payload:Events[K]} }[keyof Events];

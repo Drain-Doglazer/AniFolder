@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../store';
 import { getMyList, updateListItem } from '../api/profile';
-import { listKey, ListPatch } from '../api/demo';
+import { listKey, ListPatch } from '../api/profile';
 import { Anime } from '../types/anime';
 export const collectionStatuses = { watching: 'Смотрю', planned: 'В планах', completed: 'Просмотрено', on_hold: 'Отложено', dropped: 'Брошено' };
 export const CollectionControl = ({ anime, compact = false }: { anime: Anime; compact?: boolean }) => {
@@ -10,7 +10,7 @@ export const CollectionControl = ({ anime, compact = false }: { anime: Anime; co
   const cache = useQueryClient();
   const { data, isLoading, isError } = useQuery({ queryKey: listKey(), queryFn: getMyList, enabled: isAuthenticated });
   const item = data?.data.find(entry => entry.id === anime.id);
-  const mutation = useMutation({ mutationFn: (patch: ListPatch) => updateListItem(anime.id, patch, anime), onSuccess: () => { cache.invalidateQueries({ queryKey: ['myList'] }); cache.invalidateQueries({ queryKey: ['recommendations'] }); } });
+  const mutation = useMutation({ mutationFn: (patch: ListPatch) => updateListItem(anime.id, patch, item?.status ?? 'planned'), onSuccess: () => { cache.invalidateQueries({ queryKey: ['myList'] }); cache.invalidateQueries({ queryKey: ['recommendations'] }); } });
   if (!isAuthenticated) return <Link to="/login" className="button-secondary w-full text-center">Войти и сохранить</Link>;
   return <div key={user?.username} className="space-y-2">
     {item ? <label className="block"><span className="sr-only">Статус в списке</span><select className="field !py-2" value={item.status} disabled={mutation.isPending} onChange={event => mutation.mutate({ status: event.target.value as NonNullable<ListPatch['status']> })}>{Object.entries(collectionStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label> : <button className="button-primary w-full" disabled={mutation.isPending || isLoading || isError} onClick={() => mutation.mutate({ status: 'planned' })}>{mutation.isPending ? 'Сохраняем…' : '+ В планы'}</button>}
