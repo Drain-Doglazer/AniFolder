@@ -3,6 +3,7 @@
 Запуск Python из ml/.venv; --backend-python указывает Python с зависимостями backend.
 TEST_DATABASE_URL обязателен. Скрипт применяет реальный Alembic и seed,
 поднимает два HTTP-сервера на loopback, вызывает train и проверяет публичную выдачу.
+--ml-url позволяет вместо локального ML проверить отдельные тестовые Docker-сервисы.
 БД не удаляет; общая dev-БД не допускается. Backend pytest/conftest не используется.
 """
 import argparse
@@ -14,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from urllib.parse import urlsplit
 
 import httpx
 import psycopg
@@ -29,9 +31,9 @@ def free_port():
         return sock.getsockname()[1]
 
 
-def wait_ready(client, base, process):
+def wait_ready(client, base, process=None):
     for _ in range(100):
-        if process.poll() is not None:
+        if process is not None and process.poll() is not None:
             raise RuntimeError('HTTP server exited; see logs')
         try:
             if client.get(base + '/health/readiness').status_code == 200:
@@ -45,7 +47,11 @@ def wait_ready(client, base, process):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--backend-python', required=True)
+    parser.add_argument('--ml-url', help='URL выделенного тестового ML на loopback, подключённого к TEST_DATABASE_URL')
     args = parser.parse_args()
+    if args.ml_url:
+        parsed = urlsplit(args.ml_url)
+        assert parsed.scheme == 'http' and parsed.hostname in {'127.0.0.1', 'localhost', '::1'}, 'Use a loopback test ML service'
     url = make_url(os.environ['TEST_DATABASE_URL'])
     assert url.get_backend_name() == 'postgresql'
     assert url.database and url.database.endswith('_ml_integration'), 'Use a dedicated test DB'
@@ -65,14 +71,19 @@ def main():
         handles = []
         try:
             backend_port, ml_port = free_port(), free_port()
-            for name, python, port in [('backend',args.backend_python,backend_port),('ml',sys.executable,ml_port)]:
+            servers = [('backend', args.backend_python, backend_port)]
+            if not args.ml_url:
+                servers.append(('ml', sys.executable, ml_port))
+            for name, python, port in servers:
                 handle = (tmp/f'{name}.log').open('w+')
                 handles.append(handle)
                 process = subprocess.Popen([python,'-m','uvicorn','app.main:app','--host','127.0.0.1','--port',str(port)],
                     cwd=ROOT/name, env={**env,'ML_ARTIFACT_DIR':str(tmp/'artifacts')}, stdout=handle,stderr=subprocess.STDOUT)
                 processes.append(process)
-            backend, ml = f'http://127.0.0.1:{backend_port}', f'http://127.0.0.1:{ml_port}'
-            for base, process in zip([backend,ml], processes): wait_ready(client,base,process)
+            backend = f'http://127.0.0.1:{backend_port}'
+            ml = args.ml_url.rstrip('/') if args.ml_url else f'http://127.0.0.1:{ml_port}'
+            wait_ready(client, backend, processes[0])
+            wait_ready(client, ml, None if args.ml_url else processes[1])
             assert client.get(backend+'/api/v1/me/recommendations').status_code==401
             accounts=[]
             for name in ['integration_warm','integration_cold']:
@@ -113,7 +124,7 @@ def main():
                 assert connection.execute('SELECT count(*) FROM recommendations WHERE user_id<=0').fetchone()[0]==0
                 assert connection.execute('SELECT count(*) FROM recommendations WHERE model_version=%s',(result['model_version'],)).fetchone()[0]==result['written_rows']
             from app.config import Settings
-            from app.db import make_engine
+            from app.training.db import make_engine
             from app.training.train import LOCK_ID, publish, run_training
             from sqlalchemy import text
             from sqlalchemy.exc import IntegrityError
@@ -146,9 +157,26 @@ def main():
                         holder.commit()
             finally:
                 engine.dispose()
+            # Настоящий serving-пул: соединение переиспользуется, после разрыва
+            # PostgreSQL check при выдаче из пула восстанавливает рабочее соединение.
+            from app.db import RecommendationStore
+            store = RecommendationStore(sync_url)
+            try:
+                store.check_ready()
+                with store.pool.connection() as connection:
+                    old_pid = connection.info.backend_pid
+                with psycopg.connect(sync_url, autocommit=True) as admin:
+                    assert admin.execute('SELECT pg_terminate_backend(%s)', (old_pid,)).fetchone()[0]
+                assert store.recommendations(user, 20) == client.get(
+                    f'{ml}/internal/v1/recommendations/{user}').json()
+                with store.pool.connection() as connection:
+                    assert connection.info.backend_pid != old_pid
+            finally:
+                store.close()
+            assert store.pool.closed
             print(json.dumps({'result':'passed','flow':'register -> train -> PostgreSQL -> authenticated recommendations -> current-list filtering',
                 'site_users':result['site_users'],'written_rows':result['written_rows'],'routes':result['routes'],
-                'atomic_rollback':True,'concurrent_training_lock':True},ensure_ascii=False,indent=2))
+                'atomic_rollback':True,'concurrent_training_lock':True,'serving_pool_reconnect':True},ensure_ascii=False,indent=2))
         except Exception:
             for handle in handles:
                 handle.flush(); handle.seek(0)

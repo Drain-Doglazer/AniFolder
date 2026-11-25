@@ -1,5 +1,6 @@
 # Recommendation Service. Требуется Python >=3.12; проверено на Python 3.12.
 -r requirements-service.txt
+SQLAlchemy==2.0.55
 implicit>=0.7.3,<0.8
 numpy>=2.2
 scipy>=1.15

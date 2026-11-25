@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from pydantic import AnyHttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ML_DIR = Path(__file__).resolve().parents[1]
@@ -16,3 +17,5 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://anifolder:anifolder@localhost:5432/anifolder"
     ml_anilist_data_dir: Path | None = None
     ml_artifact_dir: Path = ML_DIR / "artifacts" / "service"
+    # None: локальный полный стек; URL: отдельный внутренний обучающий сервис.
+    ml_training_url: AnyHttpUrl | None = None
