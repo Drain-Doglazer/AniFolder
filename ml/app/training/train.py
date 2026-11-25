@@ -11,7 +11,7 @@ import pandas as pd
 from sqlalchemy import Engine, bindparam, text
 
 from app.config import Settings
-from app.db import make_engine
+from app.training.db import make_engine
 from app.recsys.als import ALSRecommender
 from app.recsys.popularity import GenrePopularityRecommender, PopularityRecommender
 from app.training.datasets import filter_interactions, load_anilist, to_catalog_ids

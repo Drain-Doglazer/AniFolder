@@ -17,6 +17,7 @@ ml/artifacts/
 ml/data/
 # Jupyter
 .ipynb_checkpoints/
+ml/notebooks/
 
 # Секреты
 .env

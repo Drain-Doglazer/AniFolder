@@ -1,7 +1,29 @@
 # Запуск: docker compose -f docker-compose.dev.yml -f docker-compose.ml.yml up -d --build ml
 services:
   ml:
-    build: ./ml
+    build:
+      context: ./ml
+      target: serving
+    environment:
+      DATABASE_URL: postgresql+psycopg://anifolder:anifolder@postgres:5432/anifolder
+      ML_TRAINING_URL: http://ml-training:8001
+      OPENBLAS_NUM_THREADS: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Внутренняя сеть Compose, порт на хосте не публикуется.
+    expose:
+      - "8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health/readiness', timeout=5)"]
+      interval: 15s
+      timeout: 6s
+      retries: 3
+  ml-training:
+    profiles: [training]
+    build:
+      context: ./ml
+      target: training
     environment:
       DATABASE_URL: postgresql+psycopg://anifolder:anifolder@postgres:5432/anifolder
       ML_ARTIFACT_DIR: /service/artifacts
@@ -11,7 +33,6 @@ services:
         condition: service_healthy
     volumes:
       - ml_artifacts:/service/artifacts
-    # Внутренняя сеть Compose, порт на хосте не публикуется.
     expose:
       - "8001"
     healthcheck:

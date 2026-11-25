@@ -4,8 +4,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
-from app.db import make_engine
+from app.training.db import make_engine
 from app.main import create_app
+from sqlite_pool import sqlite_store
 
 
 @pytest.fixture
@@ -16,6 +17,8 @@ def engine(tmp_path):
             "CREATE TABLE recommendations (user_id BIGINT, anime_id BIGINT, relevance REAL, "
             "model_version TEXT, PRIMARY KEY (user_id, anime_id))"
         ))
+        # Намеренная проверка границы сервисов: внутренний GET возвращает сохранённый
+        # топ даже при наличии записи в списке; актуальную фильтрацию делает backend.
         connection.execute(text("CREATE TABLE user_anime (user_id BIGINT, anime_id BIGINT)"))
         connection.execute(text("INSERT INTO user_anime VALUES (1, 101)"))
         connection.execute(text(
@@ -30,7 +33,7 @@ def engine(tmp_path):
 
 @pytest.fixture
 def client(engine):
-    with TestClient(create_app(engine=engine, trainer=lambda: {"published": True})) as client:
+    with TestClient(create_app(store=sqlite_store(engine.url.database), trainer=lambda: {"published": True})) as client:
         yield client
 
 
@@ -85,7 +88,7 @@ def test_health_and_database_failure(client, engine):
     assert client.get("/health").status_code == 200
 
 
-@pytest.mark.parametrize("driver", ["postgresql", "postgresql+asyncpg", "postgresql+psycopg"])
+@pytest.mark.parametrize("driver", ["postgres", "postgresql", "postgresql+asyncpg", "postgresql+psycopg"])
 def test_sync_driver_preserves_password_and_url_options(driver):
     engine = make_engine(f"{driver}://user:p%2Basyncpg@localhost/db?application_name=ml")
     try:
@@ -105,7 +108,7 @@ def test_train_returns_409_while_previous_job_runs(engine):
         assert release.wait(5)
         return {'published': True}
 
-    with TestClient(create_app(engine=engine, trainer=trainer)) as client:
+    with TestClient(create_app(store=sqlite_store(engine.url.database), trainer=trainer)) as client:
         try:
             assert client.post('/internal/v1/train').status_code == 202
             assert entered.wait(5)

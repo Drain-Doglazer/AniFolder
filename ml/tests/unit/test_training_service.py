@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from app.config import Settings
 from app.training.train import publish, run_training
 from app.training.jobs import TrainingJobs
+from sqlite_pool import sqlite_store
 
 
 @pytest.fixture
@@ -38,6 +39,28 @@ def database(tmp_path):
 
 def config(tmp_path, **kwargs):
     return Settings(_env_file=None, ml_artifact_dir=tmp_path/'artifacts', **kwargs)
+
+
+def test_http_train_uses_real_pipeline(database, tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app.main import create_app
+
+    # Меняется только подключение БД. Trainer и run_training настоящие.
+    monkeypatch.setattr('app.training.db.make_engine', lambda url: database)
+    with TestClient(create_app(config(tmp_path), store=sqlite_store(database.url.database))) as client:
+        assert client.get('/internal/v1/train/status').json() == {'status': 'idle'}
+        response = client.post('/internal/v1/train')
+        assert response.status_code == 202
+        assert response.json() == {'status': 'ok'}
+        client.app.state.training.close()
+        status = client.get('/internal/v1/train/status').json()
+        assert status['status'] == 'succeeded'
+        assert status['result']['published']
+        assert status['result']['als_trained']
+        assert status['result']['written_rows'] == 350
+        recommendations = client.get('/internal/v1/recommendations/7?limit=50')
+        assert recommendations.status_code == 200
+        assert len(recommendations.json()) == 50
 
 
 def test_training_maps_external_ids_and_only_publishes_site_users(database, tmp_path):

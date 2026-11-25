@@ -6,9 +6,8 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Path, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import Connection, text
 
-from app.db import get_connection
+from app.db import RecommendationStore, get_store
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/internal/v1")
@@ -28,7 +27,7 @@ class TrainAccepted(BaseModel):
 @router.get("/recommendations/{user_id}", response_model=list[Recommendation])
 def recommendations(
     user_id: Annotated[int, Path(gt=0, le=9223372036854775807)],
-    connection: Annotated[Connection, Depends(get_connection)],
+    store: Annotated[RecommendationStore, Depends(get_store)],
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
 ) -> list[dict]:
     """Готовые строки в ID сайта; актуальный user_anime фильтрует backend.
@@ -36,13 +35,7 @@ def recommendations(
     Без сохранённых рекомендаций (включая неизвестного пользователя) — [].
     При одинаковой relevance порядок стабилен по anime_id.
     """
-    rows = connection.execute(
-        text("SELECT anime_id, relevance FROM recommendations "
-             "WHERE user_id = :user_id "
-             "ORDER BY relevance DESC, anime_id ASC LIMIT :limit"),
-        {"user_id": user_id, "limit": limit},
-    ).mappings()
-    return [dict(row) for row in rows]
+    return store.recommendations(user_id, limit)
 
 
 @router.post("/train", response_model=TrainAccepted, status_code=202)
